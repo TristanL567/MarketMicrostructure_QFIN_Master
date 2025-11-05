@@ -268,7 +268,7 @@ ggplot(plot_data_jump, aes(x = datetime)) +
 
 #==== 04c - Plot: Bid-Ask =====================================================#
 
-plot_data_freeze <- regression_data_minutes %>%
+plot_data_freeze <- regression_data %>%
   filter(datetime >= start_zoom & datetime <= end_zoom) %>%
     pivot_longer(
     cols = c("BID", "ASK"),
@@ -300,10 +300,10 @@ ggplot(plot_data_freeze, aes(x = datetime)) +
 
 #==== 05a - Extended Regression ===============================================#
 
-press_conf_start <- as.POSIXct("2025-10-29 14:30:00")
-press_conf_end   <- as.POSIXct("2025-10-29 15:00:00") # 30 min window
+press_conf_start <- as.POSIXct("2025-10-29 13:55:00")
+press_conf_end   <- as.POSIXct("2025-10-29 14:25:00") # 30 min window
 
-lambda_over_time <- regression_data %>%
+lambda_over_time <- regression_data_minutes %>%
   filter(datetime >= press_conf_start & datetime < press_conf_end) %>%
     mutate(window_start = floor_date(datetime, "1 minutes")) %>%
     group_by(window_start) %>%
