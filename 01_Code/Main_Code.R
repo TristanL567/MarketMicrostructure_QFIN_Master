@@ -16,9 +16,10 @@ Path <- "C:/Users/TristanLeiter/Documents/Privat/Market_Microstructure/04_Presen
 ## Needs to enable checking for install & if not then autoinstall.
 
 packages <- c("dplyr", "tidyr", "lubridate",
-              "ggplot2",
+              "ggplot2","patchwork",
               "purrr", "broom",
-              "usethis")
+              "usethis",
+              "PINstimation")
 
 for(i in 1:length(packages)){
   package_name <- packages[i]
@@ -57,6 +58,7 @@ usethis::use_git_ignore(c(
   "Trade_20251029.csv",
   "Trade_Minutes_20251029.csv"
 ))
+
 #==============================================================================#
 #==== 02 - Data ===============================================================#
 #==============================================================================#
@@ -70,6 +72,9 @@ Trade_Minutes <- read.csv(Trade_Minutes_Data_Directory)
 Quote_Minutes <- read.csv(Quote_Minutes_Data_Directory)
 
 #==== 02b - Data Manipulation =================================================#
+
+tryCatch({
+  
 Trade_clean <- Trade %>%
   mutate(
     datetime = as.POSIXct(paste(DATE, TIME_M), format = "%Y-%m-%d %H:%M:%S"),
@@ -119,8 +124,12 @@ merged_data_minutes <- bind_rows(Trade_Minutes_clean, Quote_Minutes_clean) %>%
 merged_data_minutes <- merged_data_minutes %>%
   na.omit()
 
+}, silent = TRUE)
+
 #==== 02c - Lee-Ready Algorithm - estimate the trade direction ================#
 
+tryCatch({
+  
 merged_data <- merged_data %>%
   arrange(datetime) %>%
     mutate(
@@ -154,12 +163,17 @@ merged_data_minutes <- merged_data_minutes %>%
     )
   )
 
+}, silent = TRUE)
+
 #==============================================================================#
 #==== 03 - Analysis ===========================================================#
 #==============================================================================#
 ## In this part we prepare the data and run the regression utilizing the Kyle model.
 
 #==== 03a - Regression Preparation ============================================#
+
+tryCatch({
+  
 regression_data <- merged_data %>%
   mutate(q_t = d_t * SIZE) %>%
   mutate(delta_p = MIDQUOTE - lag(MIDQUOTE)) %>%
@@ -182,6 +196,8 @@ regression_data_minutes <- regression_data_minutes %>%
 regression_data_minutes <- regression_data_minutes %>%
   drop_na(delta_p, delta_d_t)
 print(head(regression_data_minutes))
+
+}, silent = TRUE)
 
 #==== 03b - Run the regression analysis =======================================#
 # The formula is:
@@ -220,6 +236,8 @@ print(summary(price_impact_model_minutes))
 
 #==== 04a - Plot: Price Jump (by Midquote) ====================================#
 
+tryCatch({
+  
 # start_zoom <- as.POSIXct("2025-10-29 13:59:59.000")
 start_zoom <- as.POSIXct("2025-10-29 14:29:59.000")
 
@@ -249,7 +267,12 @@ ggplot(plot_data_jump, aes(x = datetime, y = MIDQUOTE)) +
 
 ## We see an instant jump in the mid-price.
 
+}, silent = TRUE)
+
 #==== 04b - Plot: Trades follow the discovered Price ==========================#
+
+tryCatch({
+  
 ggplot(plot_data_jump, aes(x = datetime)) +
   geom_line(aes(y = MIDQUOTE, color = "Midquote"), size = 1.2) +
     geom_point(aes(y = PRICE, color = "Trade Price"), size = 2) +
@@ -266,8 +289,12 @@ ggplot(plot_data_jump, aes(x = datetime)) +
   theme_minimal() +
   theme(legend.position = "bottom")
 
+}, silent = TRUE)
+
 #==== 04c - Plot: Bid-Ask =====================================================#
 
+tryCatch({
+  
 plot_data_freeze <- regression_data %>%
   filter(datetime >= start_zoom & datetime <= end_zoom) %>%
     pivot_longer(
@@ -294,12 +321,16 @@ ggplot(plot_data_freeze, aes(x = datetime)) +
   theme_minimal() +
   theme(legend.position = "bottom")
 
+}, silent = TRUE)
+
 #==============================================================================#
 #==== 05 - Extended Regression ================================================#
 #==============================================================================#
 
 #==== 05a - Extended Regression ===============================================#
 
+tryCatch({
+  
 press_conf_start <- as.POSIXct("2025-10-29 13:55:00")
 press_conf_end   <- as.POSIXct("2025-10-29 14:25:00") # 30 min window
 
@@ -317,9 +348,189 @@ lambda_results <- lambda_over_time %>%
 
 print(lambda_results)
 
+}, silent = TRUE)
+
+#==============================================================================#
+#==== 06 - PIN | VPIN measure. ================================================#
+#==============================================================================#
+
+#==== 06a - VPIN measure implementation =======================================#
+## Using PINstimation.
+
+## For the minutes dataset (14:25 to 14:55).
+tryCatch({
+  
+hft_data <- data.frame(
+  timestamp = Trade_Minutes_clean$datetime,
+  price = Trade_Minutes_clean$PRICE,
+  volume = Trade_Minutes_clean$SIZE
+)
+
+# We'll start with an initial "burn-in" period to get the first calculation.
+# Let's use the first 5 minutes of data as our starting point.
+initial_burn_in_time <- hft_data$timestamp[1] + (5 * 60) # 5 minutes * 60 seconds
+initial_rows <- which(hft_data$timestamp >= initial_burn_in_time)[1]
+
+# If the dataset is shorter than 5 minutes, we'll adjust.
+if (is.na(initial_rows)) {
+  initial_rows <- nrow(hft_data)
+}
+
+chunk_size <- 1000 # Process 1000 new trades per update
+
+vpin_updates_minutes <- list()
+
+for (i in seq(from = initial_rows, to = nrow(hft_data), by = chunk_size)) {
+    current_data <- hft_data[1:i, ]
+  vpin_results <- vpin(current_data, verbose = FALSE)
+    if (nrow(vpin_results@bucketdata) > 0) {
+    
+    latest_vpin <- tail(vpin_results@bucketdata$vpin, 1)
+    latest_timestamp <- tail(vpin_results@bucketdata$endtime, 1)
+    
+    cat(sprintf("Time: %s  |  Trades Processed: %d  |  Latest VPIN: %.4f\n",
+                format(latest_timestamp, "%H:%M:%S"),
+                i,
+                latest_vpin))
+    
+    update_key <- format(latest_timestamp, "%Y-%m-%d %H:%M:%S")
+    vpin_updates_minutes[[update_key]] <- latest_vpin
+  }
+}
+
+cat("--------------------------------------\n")
+cat("...Simulation finished.\n")
 
 
+if (length(vpin_updates_minutes) > 0) {
+  vpin_minutes <- data.frame(
+    timestamp = as.POSIXct(names(vpin_updates_minutes)),
+    vpin = unlist(vpin_updates_minutes)
+  )
+  
+  plot(vpin_minutes$timestamp, vpin_minutes$vpin, type = 'l', col = "blue",
+       xlab = "Time", ylab = "VPIN Estimate",
+       main = "Simulated Continuous VPIN Updates for Trade_Minutes_clean")
+  grid()
+} else {
+  cat("Not enough data to generate VPIN updates. Try with a larger dataset or smaller vpin() parameters.\n")
+}
 
+}, silent = TRUE)
+
+## For the speech dataset (14:25 to 14:55).
+
+tryCatch({
+  
+hft_data <- data.frame(
+  timestamp = Trade_clean$datetime,
+  price = Trade_clean$PRICE,
+  volume = Trade_clean$SIZE
+)
+
+# We'll start with an initial "burn-in" period to get the first calculation.
+# Let's use the first 5 minutes of data as our starting point.
+initial_burn_in_time <- hft_data$timestamp[1] + (5 * 60) # 5 minutes * 60 seconds
+initial_rows <- which(hft_data$timestamp >= initial_burn_in_time)[1]
+
+# If the dataset is shorter than 5 minutes, we'll adjust.
+if (is.na(initial_rows)) {
+  initial_rows <- nrow(hft_data)
+}
+
+chunk_size <- 1000 # Process 1000 new trades per update
+
+vpin_updates_speech <- list()
+
+for (i in seq(from = initial_rows, to = nrow(hft_data), by = chunk_size)) {
+  current_data <- hft_data[1:i, ]
+  vpin_results <- vpin(current_data, verbose = FALSE)
+  if (nrow(vpin_results@bucketdata) > 0) {
+    
+    latest_vpin <- tail(vpin_results@bucketdata$vpin, 1)
+    latest_timestamp <- tail(vpin_results@bucketdata$endtime, 1)
+    
+    cat(sprintf("Time: %s  |  Trades Processed: %d  |  Latest VPIN: %.4f\n",
+                format(latest_timestamp, "%H:%M:%S"),
+                i,
+                latest_vpin))
+    
+    update_key <- format(latest_timestamp, "%Y-%m-%d %H:%M:%S")
+    vpin_updates_speech[[update_key]] <- latest_vpin
+  }
+}
+
+cat("--------------------------------------\n")
+cat("...Simulation finished.\n")
+
+
+if (length(vpin_updates_speech) > 0) {
+  vpin_speech <- data.frame(
+    timestamp = as.POSIXct(names(vpin_updates_speech)),
+    vpin = unlist(vpin_updates_speech)
+  )
+  
+  plot(vpin_speech$timestamp, vpin_speech$vpin, type = 'l', col = "blue",
+       xlab = "Time", ylab = "VPIN Estimate",
+       main = "Simulated Continuous VPIN Updates for Trade_Minutes_clean")
+  grid()
+} else {
+  cat("Not enough data to generate VPIN updates. Try with a larger dataset or smaller vpin() parameters.\n")
+}
+
+}, silent = TRUE)
+
+
+#==== 06b - Visualisation =====================================================#
+
+if (!is.null(vpin_minutes) && !is.null(vpin_speech)) {
+  
+  cat("\nGenerating comparative plot...\n")
+  
+  # Plot 1: VPIN for the first dataset
+  p1 <- ggplot(vpin_minutes, aes(x = timestamp, y = vpin)) +
+    geom_line(color = "dodgerblue", size = 1) +
+    labs(
+      title = "VPIN Evolution (13:55 - 14:25)",
+      subtitle = "Standard trading period",
+      x = "Time",
+      y = "VPIN Estimate"
+    ) +
+    theme_minimal() +
+    theme(plot.title = element_text(face = "bold"))
+  
+  # Plot 2: VPIN for the speech dataset
+  p2 <- ggplot(vpin_speech, aes(x = timestamp, y = vpin)) +
+    geom_line(color = "firebrick", size = 1) +
+    labs(
+      title = "VPIN Evolution (14:25 - 14:55)",
+      subtitle = "Trading period during speech",
+      x = "Time",
+      y = "VPIN Estimate"
+    ) +
+    theme_minimal() +
+    theme(plot.title = element_text(face = "bold"))
+  
+  # Combine the two plots vertically using patchwork
+  combined_plot <- p1 | p2
+  
+  # Display the combined plot
+  print(combined_plot)
+  
+  Path <- file.path(Charts_Directory, "03_VPN_Combined_Plot.png")
+  ggsave(
+    filename = Path,
+    plot = combined_plot,
+    width = 3750,
+    height = 1833,
+    units = "px",
+    dpi = 300,
+    limitsize = FALSE
+  )
+  
+} else {
+  cat("\nCould not generate the comparative plot because one or both simulations failed to produce data.\n")
+}
 
 #==============================================================================#
 #==============================================================================#
