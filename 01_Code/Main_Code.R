@@ -19,7 +19,10 @@ packages <- c("dplyr", "tidyr", "lubridate",
               "ggplot2","patchwork",
               "purrr", "broom",
               "usethis",
-              "PINstimation")
+              "PINstimation",
+              "sandwich",    ## For Neway-West adjusted SE.
+              "lmtest"
+              )
 
 for(i in 1:length(packages)){
   package_name <- packages[i]
@@ -80,6 +83,10 @@ FOMC_Dates <- c("2025-01-29", "2025-03-19", "2025-05-07",
 Controls_Dates <- c("2025-02-04", "2025-03-27", "2025-05-20",
                     "2025-06-23", "2025-08-04", "2025-10-03",
                     "2025-11-05")
+
+## Newey-West.
+
+lag_NW <- 6
 
 ## Output.
 Kyle_Regression_Output <- list()
@@ -193,7 +200,24 @@ kyle_model_whole_period <- lm(
   data = regression_data
 )
 
+nw_vcov <- NeweyWest(kyle_model_whole_period, lag = lag_NW, prewhite = FALSE, adjust = TRUE)
+coefs <- coeftest(kyle_model_whole_period, vcov. = nw_vcov)
+tidy_results <- broom::tidy(coefs)
+
+alpha <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(estimate)
+t_stat <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(statistic)
+model_stats <- broom::glance(kyle_model_whole_period) %>%
+  dplyr::rename(
+    f.statistic = statistic, 
+    f.p.value = p.value
+  )
+
+combined_summary <- tidyr::crossing(tidy_results, model_stats)
+combined_summary <- data.frame(combined_summary)
+####
+
 Kyle_Regression_Output[[1]] <- kyle_model_whole_period
+Kyle_Regression_Output[[2]] <- combined_summary
 
 #==== 02d - Kyle-Regression for the subperiods ================================#
 ## Period 1: 13:00:00 to 14:25:00
@@ -205,7 +229,24 @@ kyle_model_period_1 <- lm(
   delta_p ~ d_t + q_t + delta_d_t, 
   data = regression_data_filtered
 )
-Kyle_Regression_Output[[2]] <- kyle_model_period_1
+
+nw_vcov <- NeweyWest(kyle_model_period_1, lag = lag_NW, prewhite = FALSE, adjust = TRUE)
+coefs <- coeftest(kyle_model_period_1, vcov. = nw_vcov)
+tidy_results <- broom::tidy(coefs)
+
+alpha <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(estimate)
+t_stat <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(statistic)
+model_stats <- broom::glance(kyle_model_period_1) %>%
+  dplyr::rename(
+    f.statistic = statistic, 
+    f.p.value = p.value
+  )
+
+combined_summary <- tidyr::crossing(tidy_results, model_stats)
+combined_summary <- data.frame(combined_summary)
+
+Kyle_Regression_Output[[3]] <- kyle_model_period_1
+Kyle_Regression_Output[[4]] <- combined_summary
 
 ## Period 2: 14:25:00 to 16:00:00
 
@@ -217,30 +258,55 @@ kyle_model_period_2 <- lm(
   data = regression_data_filtered
 )
 
-Kyle_Regression_Output[[3]] <- kyle_model_period_2
+nw_vcov <- NeweyWest(kyle_model_period_2, lag = lag_NW, prewhite = FALSE, adjust = TRUE)
+coefs <- coeftest(kyle_model_period_2, vcov. = nw_vcov)
+tidy_results <- broom::tidy(coefs)
+
+alpha <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(estimate)
+t_stat <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(statistic)
+model_stats <- broom::glance(kyle_model_period_2) %>%
+  dplyr::rename(
+    f.statistic = statistic, 
+    f.p.value = p.value
+  )
+
+combined_summary <- tidyr::crossing(tidy_results, model_stats)
+combined_summary <- data.frame(combined_summary)
+
+Kyle_Regression_Output[[5]] <- kyle_model_period_2
+Kyle_Regression_Output[[6]] <- combined_summary
 
 #==== 02e - Kyle-Regression for the constrained (short) subperiods ============#
 ## Run the rolling regression for the short subperiods.
 
 tryCatch({
   
-  lambda_over_time <- regression_data %>%
+  lambda_over_time_nw <- regression_data %>%
     mutate(window_start = floor_date(datetime, "2 minutes")) %>%
     group_by(window_start) %>%
     nest() %>%
-    mutate(model = map(data, ~ lm(delta_p ~ d_t + q_t + delta_d_t, data = .x))) %>%
-    mutate(tidied = map(model, tidy))
-  lambda_results <- lambda_over_time %>%
-    unnest(tidied) %>%                 
-    filter(term == "q_t") %>%         
-    select(window_start, estimate, p.value) 
+        mutate(model = map(data, ~ lm(delta_p ~ d_t + q_t + delta_d_t, data = .x))) %>%
+        mutate(nw_tidied = map(model, ~ {
+            nw_vcov <- sandwich::NeweyWest(.x, 
+                                     lag = lag_NW, 
+                                     prewhite = FALSE, 
+                                     adjust = TRUE)
+            nw_coefs <- lmtest::coeftest(.x, vcov. = nw_vcov)
+            broom::tidy(nw_coefs)
+    }))
+  
+  lambda_results_nw <- lambda_over_time_nw %>%
+    unnest(nw_tidied) %>% 
+    filter(term == "q_t") %>% 
+    select(window_start, estimate, p.value) %>%
+    ungroup()
 
 }, silent = TRUE)
 
 ## Plot the price impact.
 avg_price <- mean(regression_data$PRICE)
 shares_in_10k_trade <- 10000 / avg_price
-lambda_results <- lambda_results %>%
+lambda_results <- lambda_results_nw %>%
   mutate(significant = ifelse(p.value < 0.05, "Yes", "No"))
 
 Plot <- ggplot(lambda_results, aes(x = window_start, y = estimate * shares_in_10k_trade)) +
@@ -273,7 +339,9 @@ ggsave(
 
 #==== 02f - Output & Returning ================================================#
 
-names(Kyle_Regression_Output) <- c("Full period", "Subperiod 1", "Subperiod ")
+names(Kyle_Regression_Output) <- c("Full period", "Full Period (NW)",
+                                   "Subperiod 1", "Subperiod 1 (NW)",
+                                   "Subperiod ",, "Subperiod 2 (NW)")
 Kyle_Regression_Output_All[[file]] <- Kyle_Regression_Output
 
 Lambda_results_Output[[file]] <- lambda_results
@@ -368,26 +436,60 @@ matching_files <- grep(pattern = Date_used,
     
     ## From 13:00:00 to 16:00:00
     
-    kyle_model_whole_period <- lm(
+kyle_model_whole_period <- lm(
       delta_p ~ d_t + q_t + delta_d_t, 
       data = regression_data
-    )
+)
     
-    Kyle_Regression_Output[[1]] <- kyle_model_whole_period
+nw_vcov <- NeweyWest(kyle_model_whole_period, lag = lag_NW, prewhite = FALSE, adjust = TRUE)
+coefs <- coeftest(kyle_model_whole_period, vcov. = nw_vcov)
+tidy_results <- broom::tidy(coefs)
+
+alpha <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(estimate)
+t_stat <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(statistic)
+model_stats <- broom::glance(kyle_model_whole_period) %>%
+  dplyr::rename(
+    f.statistic = statistic, 
+    f.p.value = p.value
+  )
+
+combined_summary <- tidyr::crossing(tidy_results, model_stats)
+combined_summary <- data.frame(combined_summary)
+####
+
+Kyle_Regression_Output[[1]] <- kyle_model_whole_period
+Kyle_Regression_Output[[2]] <- combined_summary
     
 #==== 03d - Kyle-Regression for the subperiods ================================#
 ## Period 1: 13:00:00 to 14:25:00
     
-    regression_data_filtered <- regression_data %>%
+regression_data_filtered <- regression_data %>%
       filter(format(datetime, "%H:%M:%S") < "14:25:00")
     
-    kyle_model_period_1 <- lm(
+kyle_model_period_1 <- lm(
       delta_p ~ d_t + q_t + delta_d_t, 
       data = regression_data_filtered
-    )
-    Kyle_Regression_Output[[2]] <- kyle_model_period_1
+)
     
-    ## Period 2: 14:25:00 to 16:00:00
+    nw_vcov <- NeweyWest(kyle_model_period_1, lag = lag_NW, prewhite = FALSE, adjust = TRUE)
+    coefs <- coeftest(kyle_model_period_1, vcov. = nw_vcov)
+    tidy_results <- broom::tidy(coefs)
+    
+    alpha <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(estimate)
+    t_stat <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(statistic)
+    model_stats <- broom::glance(kyle_model_period_1) %>%
+      dplyr::rename(
+        f.statistic = statistic, 
+        f.p.value = p.value
+      )
+    
+    combined_summary <- tidyr::crossing(tidy_results, model_stats)
+    combined_summary <- data.frame(combined_summary)
+    
+    Kyle_Regression_Output[[3]] <- kyle_model_period_1
+    Kyle_Regression_Output[[4]] <- combined_summary
+    
+## Period 2: 14:25:00 to 16:00:00
     
     regression_data_filtered <- regression_data %>%
       filter(format(datetime, "%H:%M:%S") >= "14:25:00")
@@ -397,23 +499,48 @@ matching_files <- grep(pattern = Date_used,
       data = regression_data_filtered
     )
     
-    Kyle_Regression_Output[[3]] <- kyle_model_period_2
+    nw_vcov <- NeweyWest(kyle_model_period_2, lag = lag_NW, prewhite = FALSE, adjust = TRUE)
+    coefs <- coeftest(kyle_model_period_2, vcov. = nw_vcov)
+    tidy_results <- broom::tidy(coefs)
     
-#==== 03e - Kyle-Regression for the constrained (short) subperiods ============#
+    alpha <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(estimate)
+    t_stat <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(statistic)
+    model_stats <- broom::glance(kyle_model_period_2) %>%
+      dplyr::rename(
+        f.statistic = statistic, 
+        f.p.value = p.value
+      )
+    
+    combined_summary <- tidyr::crossing(tidy_results, model_stats)
+    combined_summary <- data.frame(combined_summary)
+    
+    Kyle_Regression_Output[[5]] <- kyle_model_period_2
+    Kyle_Regression_Output[[6]] <- combined_summary
+    
+#==== 02e - Kyle-Regression for the constrained (short) subperiods ============#
 ## Run the rolling regression for the short subperiods.
     
 tryCatch({
       
-      lambda_over_time <- regression_data %>%
+      lambda_over_time_nw <- regression_data %>%
         mutate(window_start = floor_date(datetime, "2 minutes")) %>%
         group_by(window_start) %>%
         nest() %>%
         mutate(model = map(data, ~ lm(delta_p ~ d_t + q_t + delta_d_t, data = .x))) %>%
-        mutate(tidied = map(model, tidy))
-      lambda_results <- lambda_over_time %>%
-        unnest(tidied) %>%                 
-        filter(term == "q_t") %>%         
-        select(window_start, estimate, p.value) 
+        mutate(nw_tidied = map(model, ~ {
+          nw_vcov <- sandwich::NeweyWest(.x, 
+                                         lag = lag_NW, 
+                                         prewhite = FALSE, 
+                                         adjust = TRUE)
+          nw_coefs <- lmtest::coeftest(.x, vcov. = nw_vcov)
+          broom::tidy(nw_coefs)
+        }))
+      
+      lambda_results_nw <- lambda_over_time_nw %>%
+        unnest(nw_tidied) %>% 
+        filter(term == "q_t") %>% 
+        select(window_start, estimate, p.value) %>%
+        ungroup()
       
     }, silent = TRUE)
     
@@ -453,7 +580,9 @@ tryCatch({
     
 #==== 03f - Output & Returning ================================================#
     
-names(Kyle_Regression_Output) <- c("Full period", "Subperiod 1", "Subperiod ")
+names(Kyle_Regression_Output) <- c("Full period", "Full Period (NW)",
+                                       "Subperiod 1", "Subperiod 1 (NW)",
+                                       "Subperiod ",, "Subperiod 2 (NW)")
 Kyle_Regression_Output_Controls_All[[file]] <- Kyle_Regression_Output
     
 Lambda_results_Controls_Output[[file]] <- lambda_results
