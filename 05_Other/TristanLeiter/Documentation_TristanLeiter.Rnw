@@ -1,0 +1,164 @@
+%==== KNITR ===================================================================%
+
+<<echo=FALSE, eval = !knitr::is_latex_output()>>=
+library(knitr)
+
+Path <- "C:/Users/TristanLeiter/Documents/Privat/Market_Microstructure/04_Presentation/MarketMicrostructure_QFIN_Master/05_Other/TristanLeiter"
+Directory <- file.path(Path, "Documentation_TristanLeiter.Rnw")
+Directory_Tex <- file.path(Path, "Documentation_TristanLeiter.tex")
+setwd(Path)
+
+# knit2pdf(Directory)
+
+@
+
+%==== START ===================================================================%
+
+\documentclass{report}
+
+\usepackage[left=2cm, right=2cm, top=1cm, bottom=2cm]{geometry}
+
+% Font.
+
+
+% Main packages.
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{booktabs} 
+\usepackage{rotating} 
+\usepackage{lmodern}
+
+% Required for Table.
+
+
+%%
+
+\title{Market Microstructure - Documentation}
+\author{Mariia, Raaif, Jan and Tristan}
+\date{\today}
+
+%==== DOCUMENT START ==========================================================%
+
+\begin{document}
+
+\maketitle
+
+%==== ABSTRACT ================================================================%
+
+% \begin{abstract}
+% This report demonstrates the integration of R code and its output within a LaTeX document using Sweave. It covers the basic structure of a report, including a summary, chapters with subchapters, and a bibliography.
+% \end{abstract}
+
+%==== Table of content ========================================================%
+
+\tableofcontents
+\newpage
+
+%==== Introduction ============================================================%
+
+\chapter{Introduction}
+
+% \section{Introduction}
+
+
+%==== Chapter 1: Data =========================================================%
+
+\chapter{Exploratory Data Analysis}
+
+\section{Overview}
+
+\subsection{Data Origin}
+
+The data is sourced from Wharton Research Data Services (WRDS), specifically
+the datasets relating to trade and quotes (TAQ) by the New York Stock Exchange (NYSE).
+The database provides transaction information at the intraday level covering more
+than 10'000 stocks listed on 16 major American exchanges. This also includes ETF-specific
+data, which will be used in this analysis. Within TAQ, the datasets relating to "Consolidated Quotes" and "Consolidates Trades" were used. \\
+
+For the analysis, the following FOMC-dates and non-FOMC dates (acting as controls)
+were analysed:
+
+\begin{table}[ht]
+\centering
+\caption{Analysis Dates: FOMC and Control Days (2025)}
+\label{tab:fomc-dates}
+\begin{tabular}{ll}
+\toprule
+\textbf{FOMC Date} & \textbf{Control Date} \\
+\midrule
+2025-01-29 & 2025-02-04 \\
+2025-03-19 (Economic Projections) & 2025-03-27 \\
+2025-05-07 & 2025-05-20 \\
+2025-06-18 (Economic Projections) & 2025-06-23 \\
+2025-07-30 & 2025-08-04 \\
+2025-09-29 & 2025-10-03 \\
+2025-10-29 (Economic Projections) & 2025-11-05 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Within TAQ, the SPDR S\&P 500 Trust ETF (Ticker: "SPY") was analysed. The selected
+time-period started from 13:00:00 and ended at 16:00:00. The first part of the period,
+from 13:00:00 to 14:25:00 relates to the release of the written statement after
+each meeting whilst the second period, from 14:25:00 to 16:00:00 is associated with
+the speech by the chairman of the federal reserve system and the subsequent
+questions and answers session.
+
+\subsection{Data Description}
+
+For the analysis, the following variables were downloaded as a csv-file:
+
+\begin{table}[ht]
+\centering
+\caption{Variable Definitions from TAQ}
+\label{tab:variables}
+\begin{tabular}{ll}
+\toprule
+\textbf{Variable} & \textbf{Description} \\
+\midrule
+\multicolumn{2}{l}{\textit{Consolidated Quotes}} \\
+BID & Bid price \\
+BIDSIZ & Bid size (in units of trade) \\
+ASK & Ask price \\
+ASKSIZ & Ask size (in units oftrade) \\
+\multicolumn{2}{l}{\textit{Consolidated Trades}} \\
+SIZE & Volume of trade \\
+PRICE & Price of trade \\
+TR\_ID & Trade ID \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+the exact time stamp is added automatically be the database.
+
+
+
+%==== Chapter 2: Methodology ==================================================%
+
+\chapter{Methodology}
+
+\section{Kyle-regressions}
+
+\section{VPIN}
+
+
+%==== Chapter 3: Output & Results =============================================%
+
+\chapter{Output}
+
+\section{Overview}
+
+
+
+%==== Anhang ==================================================================%
+
+\appendix 
+
+\chapter{Overview}
+
+%==== END =====================================================================%
+
+\end{document}
