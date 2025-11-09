@@ -341,7 +341,7 @@ ggsave(
 
 names(Kyle_Regression_Output) <- c("Full period", "Full Period (NW)",
                                    "Subperiod 1", "Subperiod 1 (NW)",
-                                   "Subperiod ",, "Subperiod 2 (NW)")
+                                   "Subperiod 2", "Subperiod 2 (NW)")
 Kyle_Regression_Output_All[[file]] <- Kyle_Regression_Output
 
 Lambda_results_Output[[file]] <- lambda_results
@@ -517,7 +517,7 @@ kyle_model_period_1 <- lm(
     Kyle_Regression_Output[[5]] <- kyle_model_period_2
     Kyle_Regression_Output[[6]] <- combined_summary
     
-#==== 02e - Kyle-Regression for the constrained (short) subperiods ============#
+#==== 03e - Kyle-Regression for the constrained (short) subperiods ============#
 ## Run the rolling regression for the short subperiods.
     
 tryCatch({
@@ -547,7 +547,7 @@ tryCatch({
 ## Plot the price impact.
     avg_price <- mean(regression_data$PRICE)
     shares_in_10k_trade <- 10000 / avg_price
-    lambda_results <- lambda_results %>%
+    lambda_results <- lambda_results_nw %>%
       mutate(significant = ifelse(p.value < 0.05, "Yes", "No"))
     
     Plot <- ggplot(lambda_results, aes(x = window_start, y = estimate * shares_in_10k_trade)) +
@@ -582,7 +582,7 @@ tryCatch({
     
 names(Kyle_Regression_Output) <- c("Full period", "Full Period (NW)",
                                        "Subperiod 1", "Subperiod 1 (NW)",
-                                       "Subperiod ",, "Subperiod 2 (NW)")
+                                       "Subperiod 2", "Subperiod 2 (NW)")
 Kyle_Regression_Output_Controls_All[[file]] <- Kyle_Regression_Output
     
 Lambda_results_Controls_Output[[file]] <- lambda_results
