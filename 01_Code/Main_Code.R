@@ -34,6 +34,15 @@ for(i in 1:length(packages)){
 
 #==== 1B - Functions ==========================================================#
 
+sourceFunctions <- function (functionDirectory)  {
+  functionFiles <- list.files(path = functionDirectory, pattern = "*.R", 
+                              full.names = T)
+  ssource <- function(path) {
+    try(source(path, echo = F, verbose = F, print.eval = T, 
+               local = F))
+  }
+  sapply(functionFiles, ssource)
+}
 
 
 #==== 1C - Parameters =========================================================#
@@ -41,13 +50,53 @@ for(i in 1:length(packages)){
 ## Directories.
 Data_Directory <- file.path(Path, "02_Data")
 Charts_Directory <- file.path(Path, "03_Charts")
+Functions_Directory <- file.path(Path, "01_Code/Functions")
+
+## Load all code files in the functions directory.
+sourceFunctions(Functions_Directory)
 
 ## Input Data Files.
-Trade_Data_Directory <- file.path(Data_Directory, "Trade_20251029.csv")
-Trade_Minutes_Data_Directory <- file.path(Data_Directory, "Trade_Minutes_20251029.csv")
+Data_FOMC_Directory <- file.path(Data_Directory, "FOMC")
+Data_Controls_Directory <- file.path(Data_Directory, "Controls")
 
-Quote_Data_Directory <- file.path(Data_Directory, "Quote_20251029.csv")
-Quote_Minutes_Data_Directory <- file.path(Data_Directory, "Quote_Minutes_20251029.csv")
+# Output Charts Files.
+Charts_FOMC_Directory <- file.path(Charts_Directory, "FOMC")
+Charts_Controls_Directory <- file.path(Charts_Directory, "Controls")
+
+## Get all files in the directories.
+FOMC_files <- list.files(path = Data_FOMC_Directory, 
+                         pattern = "\\.csv$", 
+                         full.names = TRUE)
+
+Controls_files <- list.files(path = Data_Controls_Directory, 
+                             pattern = "\\.csv$", 
+                             full.names = TRUE)
+
+## Used dates.
+FOMC_Dates <- c("2025-01-29", "2025-03-19", "2025-05-07",
+                "2025-06-18", "2025-07-30", "2025-09-29",
+                "2025-10-29")
+
+Controls_Dates <- c("2025-02-04", "2025-03-27", "2025-05-20",
+                    "2025-06-23", "2025-08-04", "2025-10-03",
+                    "2025-11-05")
+
+## Output.
+Kyle_Regression_Output <- list()
+Kyle_Regression_Output_All <- list()
+Lambda_results_Output <- list()
+
+Kyle_Regression_Output_Controls_All <- list()
+Lambda_results_Controls_Output <- list()
+
+## Plotting.
+blue <- "#004890"
+grey <- "#708090"
+orange <- "#F37021"
+red <- "#B22222"
+
+height <- 3750
+width <- 1833
 
 #==== 1D - git ================================================================#
 
@@ -60,21 +109,35 @@ usethis::use_git_ignore(c(
 ))
 
 #==============================================================================#
-#==== 02 - Data ===============================================================#
+#==== 02 - FOMC ===============================================================#
 #==============================================================================#
+
+for(file in 1:length(FOMC_Dates)){
+  
+tryCatch({
 
 #==== 02a - Read-in Data ======================================================#
 
-Trade <- read.csv(Trade_Data_Directory)
-Quote <- read.csv(Quote_Data_Directory)
+Date_used <- FOMC_Dates[file]
+Date_used <- gsub("-", "", Date_used)
 
-Trade_Minutes <- read.csv(Trade_Minutes_Data_Directory)
-Quote_Minutes <- read.csv(Quote_Minutes_Data_Directory)
+matching_files <- grep(pattern = Date_used, 
+                       x = FOMC_files, 
+                       value = TRUE)
+## Get the right paths.
+Trades_path <- grep(pattern = "Trades", 
+                    x = matching_files, 
+                    value = TRUE)
+Quotes_path <- grep(pattern = "Quotes", 
+                    x = matching_files, 
+                    value = TRUE)
+
+## Load the data.
+Trade <- read.csv(Trades_path)
+Quote <- read.csv(Quotes_path)
 
 #==== 02b - Data Manipulation =================================================#
 
-tryCatch({
-  
 Trade_clean <- Trade %>%
   mutate(
     datetime = as.POSIXct(paste(DATE, TIME_M), format = "%Y-%m-%d %H:%M:%S"),
@@ -90,116 +153,30 @@ Quote_clean <- Quote %>%
   filter(BID > 0, ASK > 0, BIDSIZ > 0, ASKSIZ > 0) %>%
   select(datetime, BID, ASK, is_trade)
 
-## Same for the Minutes.
-Trade_Minutes_clean <- Trade_Minutes %>%
-  mutate(
-    datetime = as.POSIXct(paste(DATE, TIME_M), format = "%Y-%m-%d %H:%M:%S"),
-    is_trade = TRUE
-  ) %>%
-  select(datetime, PRICE, SIZE, is_trade)
-
-Quote_Minutes_clean <- Quote_Minutes %>%
-  mutate(
-    datetime = as.POSIXct(paste(DATE, TIME_M), format = "%Y-%m-%d %H:%M:%S"),
-    is_trade = FALSE
-  ) %>%
-  filter(BID > 0, ASK > 0, BIDSIZ > 0, ASKSIZ > 0) %>%
-  select(datetime, BID, ASK, is_trade)
-
 ## Now merge both with tidyr.
-merged_data <- bind_rows(Trade_clean, Quote_clean) %>%
-  arrange(datetime) %>%
-    fill(BID, ASK, .direction = "down") %>%
-    filter(is_trade == TRUE) %>%
-    select(-is_trade)
-merged_data <- merged_data %>%
-  na.omit()
-
-## Same for minutes.
-merged_data_minutes <- bind_rows(Trade_Minutes_clean, Quote_Minutes_clean) %>%
+Data <- bind_rows(Trade_clean, Quote_clean) %>%
   arrange(datetime) %>%
   fill(BID, ASK, .direction = "down") %>%
   filter(is_trade == TRUE) %>%
   select(-is_trade)
-merged_data_minutes <- merged_data_minutes %>%
+Data <- Data %>%
   na.omit()
 
-}, silent = TRUE)
+## Apply the Lee-ready algorithm to get the trade direction.
+Data_adj <- Lee_Ready_Algo(Data)
 
-#==== 02c - Lee-Ready Algorithm - estimate the trade direction ================#
-
-tryCatch({
-  
-merged_data <- merged_data %>%
-  arrange(datetime) %>%
-    mutate(
-    MIDQUOTE = (BID + ASK) / 2,
-    prev_PRICE = lag(PRICE) # Get previous trade price
-  ) %>%
-    mutate(
-    d_t = case_when(
-      PRICE > MIDQUOTE ~ 1,   # 1. Quote Rule: Price > Midquote -> Buy
-      PRICE < MIDQUOTE ~ -1,  # 2. Quote Rule: Price < Midquote -> Sell
-      PRICE > prev_PRICE ~ 1,   # 3. Tick Test: Price > Prev Price -> Buy
-      PRICE < prev_PRICE ~ -1,  # 4. Tick Test: Price < Prev Price -> Sell
-      TRUE ~ 0                  # Unclassifiable (e.g., zero-tick)
-    )
-  )
-
-## Same for the minutes.
-merged_data_minutes <- merged_data_minutes %>%
-  arrange(datetime) %>%
-  mutate(
-    MIDQUOTE = (BID + ASK) / 2,
-    prev_PRICE = lag(PRICE) # Get previous trade price
-  ) %>%
-  mutate(
-    d_t = case_when(
-      PRICE > MIDQUOTE ~ 1,   # 1. Quote Rule: Price > Midquote -> Buy
-      PRICE < MIDQUOTE ~ -1,  # 2. Quote Rule: Price < Midquote -> Sell
-      PRICE > prev_PRICE ~ 1,   # 3. Tick Test: Price > Prev Price -> Buy
-      PRICE < prev_PRICE ~ -1,  # 4. Tick Test: Price < Prev Price -> Sell
-      TRUE ~ 0                  # Unclassifiable (e.g., zero-tick)
-    )
-  )
-
-}, silent = TRUE)
-
-#==============================================================================#
-#==== 03 - Analysis ===========================================================#
-#==============================================================================#
-## In this part we prepare the data and run the regression utilizing the Kyle model.
-
-#==== 03a - Regression Preparation ============================================#
-
-tryCatch({
-  
-regression_data <- merged_data %>%
-  mutate(q_t = d_t * SIZE) %>%
-  mutate(delta_p = MIDQUOTE - lag(MIDQUOTE)) %>%
-    mutate(delta_d_t = d_t - lag(d_t))
-
-regression_data <- regression_data %>%
-  filter(d_t != 0)
-regression_data <- regression_data %>%
-  drop_na(delta_p, delta_d_t)
-print(head(regression_data))
-
-## Same for minutes.
-regression_data_minutes <- merged_data_minutes %>%
+## Prepare for the regressions.
+regression_data <- Data_adj %>%
   mutate(q_t = d_t * SIZE) %>%
   mutate(delta_p = MIDQUOTE - lag(MIDQUOTE)) %>%
   mutate(delta_d_t = d_t - lag(d_t))
 
-regression_data_minutes <- regression_data_minutes %>%
+regression_data <- regression_data %>%
   filter(d_t != 0)
-regression_data_minutes <- regression_data_minutes %>%
+regression_data <- regression_data %>%
   drop_na(delta_p, delta_d_t)
-print(head(regression_data_minutes))
 
-}, silent = TRUE)
-
-#==== 03b - Run the regression analysis =======================================#
+#==== 02c - Kyle-Regression for the whole time period =========================#
 # The formula is:
 # delta_p ~ d_t + q_t + delta_d_t
 #
@@ -209,328 +186,481 @@ print(head(regression_data_minutes))
 # - 'q_t' estimates λ₁ (Kyle's Lambda, the impact of signed size)
 # - 'delta_d_t' estimates γ (the transient, non-info cost component)
 
-price_impact_model <- lm(
+## From 13:00:00 to 16:00:00
+
+kyle_model_whole_period <- lm(
   delta_p ~ d_t + q_t + delta_d_t, 
   data = regression_data
 )
 
-## Same for minutes.
-price_impact_model_minutes <- lm(
+Kyle_Regression_Output[[1]] <- kyle_model_whole_period
+
+#==== 02d - Kyle-Regression for the subperiods ================================#
+## Period 1: 13:00:00 to 14:25:00
+
+regression_data_filtered <- regression_data %>%
+  filter(format(datetime, "%H:%M:%S") < "14:25:00")
+
+kyle_model_period_1 <- lm(
   delta_p ~ d_t + q_t + delta_d_t, 
-  data = regression_data_minutes
+  data = regression_data_filtered
+)
+Kyle_Regression_Output[[2]] <- kyle_model_period_1
+
+## Period 2: 14:25:00 to 16:00:00
+
+regression_data_filtered <- regression_data %>%
+  filter(format(datetime, "%H:%M:%S") >= "14:25:00")
+
+kyle_model_period_2 <- lm(
+  delta_p ~ d_t + q_t + delta_d_t, 
+  data = regression_data_filtered
 )
 
-## Output.
-print(summary(price_impact_model))
+Kyle_Regression_Output[[3]] <- kyle_model_period_2
 
-## The signed size of the trade, q_t, had no measureable impact in this period.
-## Strong transient effect (gamma). Negative coefficient implies a price reversal.
-## -> If a buy follows a sell, the price tends to dip. 
-
-## Output for Minutes.
-print(summary(price_impact_model_minutes))
-
-#==============================================================================#
-#==== 04 - Visualisation ======================================================#
-#==============================================================================#
-
-#==== 04a - Plot: Price Jump (by Midquote) ====================================#
+#==== 02e - Kyle-Regression for the constrained (short) subperiods ============#
+## Run the rolling regression for the short subperiods.
 
 tryCatch({
   
-# start_zoom <- as.POSIXct("2025-10-29 13:59:59.000")
-start_zoom <- as.POSIXct("2025-10-29 14:29:59.000")
-
-# end_zoom   <- as.POSIXct("2025-10-29 14:00:10.000")
-end_zoom   <- as.POSIXct("2025-10-29 14:30:10.000")
-
-# plot_data_jump <- regression_data_minutes %>%
-#   filter(datetime >= start_zoom & datetime <= end_zoom)
-
-plot_data_jump <- regression_data %>%
-  filter(datetime >= start_zoom & datetime <= end_zoom)
-
-ggplot(plot_data_jump, aes(x = datetime, y = MIDQUOTE)) +
-  geom_line(color = "blue", size = 1) +
-    geom_vline(xintercept = as.POSIXct("2025-10-29 14:00:00.000"), 
-             linetype = "dashed", 
-             color = "red", 
-             size = 1) +
-  
-  ggtitle("Price Discovery: Instant Midquote Jump at 14:00:00") +
-  xlab("Time (with Milliseconds)") +
-  ylab("SPY Midquote Price ($)") +
-  
-  # Format the x-axis to show milliseconds
-  scale_x_datetime(date_labels = "%H:%M:%OS3") + 
-  theme_minimal()
-
-## We see an instant jump in the mid-price.
-
-}, silent = TRUE)
-
-#==== 04b - Plot: Trades follow the discovered Price ==========================#
-
-tryCatch({
-  
-ggplot(plot_data_jump, aes(x = datetime)) +
-  geom_line(aes(y = MIDQUOTE, color = "Midquote"), size = 1.2) +
-    geom_point(aes(y = PRICE, color = "Trade Price"), size = 2) +
-    geom_vline(xintercept = as.POSIXct("2025-10-29 14:00:00.000"), 
-             linetype = "dashed", 
-             color = "red", 
-             size = 1) +
-  ggtitle("Trades Follow the Price (14:00 Event)") +
-  xlab("Time (with Milliseconds)") +
-  ylab("Price ($)") +
-    scale_x_datetime(date_labels = "%H:%M:%OS3") +
-    scale_color_manual(name = "Price Type",
-                     values = c("Midquote" = "blue", "Trade Price" = "black")) +
-  theme_minimal() +
-  theme(legend.position = "bottom")
-
-}, silent = TRUE)
-
-#==== 04c - Plot: Bid-Ask =====================================================#
-
-tryCatch({
-  
-plot_data_freeze <- regression_data %>%
-  filter(datetime >= start_zoom & datetime <= end_zoom) %>%
-    pivot_longer(
-    cols = c("BID", "ASK"),
-    names_to = "Quote_Type",
-    values_to = "Quote_Price"
-  )
-
-ggplot(plot_data_freeze, aes(x = datetime)) +
-    geom_line(aes(y = Quote_Price, color = Quote_Type), size = 1.2) +
-  geom_point(aes(y = PRICE, shape = "Trade Price"), color = "black", size = 2.5) +
-    geom_vline(xintercept = as.POSIXct("2025-10-29 14:00:00.000"), 
-             linetype = "dashed", 
-             color = "red", 
-             size = 1) +
-  ggtitle("Market 'Freeze': Bid-Ask Spread Explodes at 14:00") +
-  xlab("Time (with Milliseconds)") +
-  ylab("Price ($)") +
-    scale_x_datetime(date_labels = "%H:%M:%OS3") +
-    scale_color_manual(name = "Quotes",
-                     values = c("BID" = "green", "ASK" = "orange")) +
-    scale_shape_manual(name = "", 
-                     values = c("Trade Price" = 16)) + # 16 is a solid circle
-  theme_minimal() +
-  theme(legend.position = "bottom")
-
-}, silent = TRUE)
-
-#==============================================================================#
-#==== 05 - Extended Regression ================================================#
-#==============================================================================#
-
-#==== 05a - Extended Regression ===============================================#
-
-tryCatch({
-  
-press_conf_start <- as.POSIXct("2025-10-29 13:55:00")
-press_conf_end   <- as.POSIXct("2025-10-29 14:25:00") # 30 min window
-
-lambda_over_time <- regression_data_minutes %>%
-  filter(datetime >= press_conf_start & datetime < press_conf_end) %>%
-    mutate(window_start = floor_date(datetime, "1 minutes")) %>%
+  lambda_over_time <- regression_data %>%
+    mutate(window_start = floor_date(datetime, "2 minutes")) %>%
     group_by(window_start) %>%
     nest() %>%
     mutate(model = map(data, ~ lm(delta_p ~ d_t + q_t + delta_d_t, data = .x))) %>%
     mutate(tidied = map(model, tidy))
-lambda_results <- lambda_over_time %>%
-  unnest(tidied) %>%                 
-  filter(term == "q_t") %>%         
-  select(window_start, estimate, p.value) 
-
-print(lambda_results)
+  lambda_results <- lambda_over_time %>%
+    unnest(tidied) %>%                 
+    filter(term == "q_t") %>%         
+    select(window_start, estimate, p.value) 
 
 }, silent = TRUE)
 
+## Plot the price impact.
+avg_price <- mean(regression_data$PRICE)
+shares_in_10k_trade <- 10000 / avg_price
+lambda_results <- lambda_results %>%
+  mutate(significant = ifelse(p.value < 0.05, "Yes", "No"))
+
+Plot <- ggplot(lambda_results, aes(x = window_start, y = estimate * shares_in_10k_trade)) +
+  geom_line() +
+  geom_point(aes(color = significant)) +
+  scale_color_manual(
+    values = c("Yes" = "red", "No" = "grey"),
+    name = "Significant (p < 0.05)" # Added a clearer legend title
+  ) +
+  labs(
+    title = "Price Impact of a $10,000 Trade",
+    y = "Price Impact (in Dollars)",
+    x = "Time"
+  ) +
+  theme_minimal() +  # Using your requested theme
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1) # Using your requested axis text rotation
+  )
+
+Path <- paste(Charts_FOMC_Directory, "/01_Price_Impact_",Date_used, ".png", sep = "")
+ggsave(
+  filename = Path,
+  plot = Plot,
+  width = height,
+  height = width,
+  units = "px",
+  dpi = 300,
+  limitsize = FALSE
+)
+
+#==== 02f - Output & Returning ================================================#
+
+names(Kyle_Regression_Output) <- c("Full period", "Subperiod 1", "Subperiod ")
+Kyle_Regression_Output_All[[file]] <- Kyle_Regression_Output
+
+Lambda_results_Output[[file]] <- lambda_results
+
+## End of the TryCatch Statement.
+    }, silent = TRUE)
+## End of the LOOP.
+}
+
+##
+
+names(Kyle_Regression_Output_All) <- FOMC_Dates
+names(Lambda_results_Output) <- FOMC_Dates
+
 #==============================================================================#
-#==== 06 - PIN | VPIN measure. ================================================#
+#==== 03 - Controls ===========================================================#
 #==============================================================================#
 
-#==== 06a - VPIN measure implementation =======================================#
+for(file in 1:length(Controls_Dates)){
+  
+  tryCatch({
+    
+#==== 03a - Read-in Data ======================================================#
+    
+Date_used <- Controls_Dates[file]
+Date_used <- gsub("-", "", Date_used)
+    
+matching_files <- grep(pattern = Date_used, 
+                           x = Controls_files, 
+                           value = TRUE)
+## Get the right paths.
+    Trades_path <- grep(pattern = "Trades", 
+                        x = matching_files, 
+                        value = TRUE)
+    Quotes_path <- grep(pattern = "Quotes", 
+                        x = matching_files, 
+                        value = TRUE)
+    
+    ## Load the data.
+    Trade <- read.csv(Trades_path)
+    Quote <- read.csv(Quotes_path)
+    
+#==== 03b - Data Manipulation =================================================#
+    
+    Trade_clean <- Trade %>%
+      mutate(
+        datetime = as.POSIXct(paste(DATE, TIME_M), format = "%Y-%m-%d %H:%M:%S"),
+        is_trade = TRUE
+      ) %>%
+      select(datetime, PRICE, SIZE, is_trade)
+    
+    Quote_clean <- Quote %>%
+      mutate(
+        datetime = as.POSIXct(paste(DATE, TIME_M), format = "%Y-%m-%d %H:%M:%S"),
+        is_trade = FALSE
+      ) %>%
+      filter(BID > 0, ASK > 0, BIDSIZ > 0, ASKSIZ > 0) %>%
+      select(datetime, BID, ASK, is_trade)
+    
+    ## Now merge both with tidyr.
+    Data <- bind_rows(Trade_clean, Quote_clean) %>%
+      arrange(datetime) %>%
+      fill(BID, ASK, .direction = "down") %>%
+      filter(is_trade == TRUE) %>%
+      select(-is_trade)
+    Data <- Data %>%
+      na.omit()
+    
+    ## Apply the Lee-ready algorithm to get the trade direction.
+    Data_adj <- Lee_Ready_Algo(Data)
+    
+    ## Prepare for the regressions.
+    regression_data <- Data_adj %>%
+      mutate(q_t = d_t * SIZE) %>%
+      mutate(delta_p = MIDQUOTE - lag(MIDQUOTE)) %>%
+      mutate(delta_d_t = d_t - lag(d_t))
+    
+    regression_data <- regression_data %>%
+      filter(d_t != 0)
+    regression_data <- regression_data %>%
+      drop_na(delta_p, delta_d_t)
+    
+#==== 03c - Kyle-Regression for the whole time period =========================#
+    # The formula is:
+    # delta_p ~ d_t + q_t + delta_d_t
+    #
+    # Where:
+    # - 'delta_p' is the change in the midquote (your dependent variable)
+    # - 'd_t' estimates λ₀ (fixed impact of direction)
+    # - 'q_t' estimates λ₁ (Kyle's Lambda, the impact of signed size)
+    # - 'delta_d_t' estimates γ (the transient, non-info cost component)
+    
+    ## From 13:00:00 to 16:00:00
+    
+    kyle_model_whole_period <- lm(
+      delta_p ~ d_t + q_t + delta_d_t, 
+      data = regression_data
+    )
+    
+    Kyle_Regression_Output[[1]] <- kyle_model_whole_period
+    
+#==== 03d - Kyle-Regression for the subperiods ================================#
+## Period 1: 13:00:00 to 14:25:00
+    
+    regression_data_filtered <- regression_data %>%
+      filter(format(datetime, "%H:%M:%S") < "14:25:00")
+    
+    kyle_model_period_1 <- lm(
+      delta_p ~ d_t + q_t + delta_d_t, 
+      data = regression_data_filtered
+    )
+    Kyle_Regression_Output[[2]] <- kyle_model_period_1
+    
+    ## Period 2: 14:25:00 to 16:00:00
+    
+    regression_data_filtered <- regression_data %>%
+      filter(format(datetime, "%H:%M:%S") >= "14:25:00")
+    
+    kyle_model_period_2 <- lm(
+      delta_p ~ d_t + q_t + delta_d_t, 
+      data = regression_data_filtered
+    )
+    
+    Kyle_Regression_Output[[3]] <- kyle_model_period_2
+    
+#==== 03e - Kyle-Regression for the constrained (short) subperiods ============#
+## Run the rolling regression for the short subperiods.
+    
+tryCatch({
+      
+      lambda_over_time <- regression_data %>%
+        mutate(window_start = floor_date(datetime, "2 minutes")) %>%
+        group_by(window_start) %>%
+        nest() %>%
+        mutate(model = map(data, ~ lm(delta_p ~ d_t + q_t + delta_d_t, data = .x))) %>%
+        mutate(tidied = map(model, tidy))
+      lambda_results <- lambda_over_time %>%
+        unnest(tidied) %>%                 
+        filter(term == "q_t") %>%         
+        select(window_start, estimate, p.value) 
+      
+    }, silent = TRUE)
+    
+## Plot the price impact.
+    avg_price <- mean(regression_data$PRICE)
+    shares_in_10k_trade <- 10000 / avg_price
+    lambda_results <- lambda_results %>%
+      mutate(significant = ifelse(p.value < 0.05, "Yes", "No"))
+    
+    Plot <- ggplot(lambda_results, aes(x = window_start, y = estimate * shares_in_10k_trade)) +
+      geom_line() +
+      geom_point(aes(color = significant)) +
+      scale_color_manual(
+        values = c("Yes" = "red", "No" = "grey"),
+        name = "Significant (p < 0.05)" # Added a clearer legend title
+      ) +
+      labs(
+        title = "Price Impact of a $10,000 Trade",
+        y = "Price Impact (in Dollars)",
+        x = "Time"
+      ) +
+      theme_minimal() +  # Using your requested theme
+      theme(
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1) # Using your requested axis text rotation
+      )
+    
+    Path <- paste(Charts_Controls_Directory, "/01_Price_Impact_",Date_used, ".png", sep = "")
+    ggsave(
+      filename = Path,
+      plot = Plot,
+      width = height,
+      height = width,
+      units = "px",
+      dpi = 300,
+      limitsize = FALSE
+    )
+    
+#==== 03f - Output & Returning ================================================#
+    
+names(Kyle_Regression_Output) <- c("Full period", "Subperiod 1", "Subperiod ")
+Kyle_Regression_Output_Controls_All[[file]] <- Kyle_Regression_Output
+    
+Lambda_results_Controls_Output[[file]] <- lambda_results
+    
+## End of the TryCatch Statement.
+  }, silent = TRUE)
+## End of the LOOP.
+}
+
+##
+
+names(Kyle_Regression_Output_Controls_All) <- Controls_Dates
+names(Lambda_results_Controls_Output) <- Controls_Dates
+
+#==============================================================================#
+#==== 010 - Appendix (ALL CODE BELOW IS CURRENTLY NOT ACTIVE) =================#
+#==============================================================================#
+
+
+
+
+#==== 02f - Charts & Visualisation ============================================#
+## Price jump by midquote (currently not used).
+
+tryCatch({
+  
+  # plot_data_jump <- regression_data %>%
+  #     filter(format(datetime, "%H:%M:%S") >= "14:29:59" &
+  #              format(datetime, "%H:%M:%S") < "14:30:10")
+  # 
+  # plot_data_jump <- regression_data %>%
+  #   filter(format(datetime, "%H:%M:%S") >= "13:59:55" &
+  #            format(datetime, "%H:%M:%S") < "14:00:10")
+  # 
+  # ggplot(plot_data_jump, aes(x = datetime, y = MIDQUOTE)) +
+  #   geom_line(color = "blue", size = 1) +
+  #     geom_vline(xintercept = as.POSIXct("2025-10-29 14:00:00.000"),
+  #              linetype = "dashed",
+  #              color = "red",
+  #              size = 1) +
+  # 
+  #   ggtitle("Price Discovery: Instant Midquote Jump at 14:00:00") +
+  #   xlab("Time (with Milliseconds)") +
+  #   ylab("SPY Midquote Price ($)") +
+  # 
+  #   # Format the x-axis to show milliseconds
+  #   scale_x_datetime(date_labels = "%H:%M:%OS3") +
+  #   theme_minimal()
+  
+  
+}, silent = TRUE)
+
+## Bid-Ask spread (currently not used)
+
+tryCatch({
+  
+  # plot_data_jump <- regression_data %>%
+  #     filter(format(datetime, "%H:%M:%S") >= "14:29:59" &
+  #              format(datetime, "%H:%M:%S") < "14:30:10")
+  # 
+  # plot_data_freeze <- plot_data_jump %>%
+  #   pivot_longer(
+  #     cols = c("BID", "ASK"),
+  #     names_to = "Quote_Type",
+  #     values_to = "Quote_Price"
+  #   )
+  # 
+  # Plot <- ggplot(plot_data_freeze, aes(x = datetime)) +
+  #   geom_line(aes(y = Quote_Price, color = Quote_Type), size = 1.2) +
+  #   geom_point(aes(y = PRICE, shape = "Trade Price"), color = "black", size = 2.5) +
+  #   geom_vline(xintercept = as.POSIXct("2025-10-29 14:00:00.000"), 
+  #              linetype = "dashed", 
+  #              color = "red", 
+  #              size = 1) +
+  #   ggtitle("Market 'Freeze': Bid-Ask Spread Explodes at 14:00") +
+  #   xlab("Time (with Milliseconds)") +
+  #   ylab("Price ($)") +
+  #   scale_x_datetime(date_labels = "%H:%M:%OS3") +
+  #   scale_color_manual(name = "Quotes",
+  #                      values = c("BID" = "green", "ASK" = "orange")) +
+  #   scale_shape_manual(name = "", 
+  #                      values = c("Trade Price" = 16)) + # 16 is a solid circle
+  #   theme_minimal() +
+  #   theme(legend.position = "bottom")
+  
+}, silent = TRUE)
+
+#==============================================================================#
+#==== 03 - PIN | VPIN measure (for the FOMC data) =============================#
+#==============================================================================#
+
+#==== 03a - VPIN measure implementation =======================================#
 ## Using PINstimation.
-
-## For the minutes dataset (14:25 to 14:55).
 tryCatch({
-  
-hft_data <- data.frame(
-  timestamp = Trade_Minutes_clean$datetime,
-  price = Trade_Minutes_clean$PRICE,
-  volume = Trade_Minutes_clean$SIZE
-)
-
-# We'll start with an initial "burn-in" period to get the first calculation.
-# Let's use the first 5 minutes of data as our starting point.
-initial_burn_in_time <- hft_data$timestamp[1] + (5 * 60) # 5 minutes * 60 seconds
-initial_rows <- which(hft_data$timestamp >= initial_burn_in_time)[1]
-
-# If the dataset is shorter than 5 minutes, we'll adjust.
-if (is.na(initial_rows)) {
-  initial_rows <- nrow(hft_data)
-}
-
-chunk_size <- 1000 # Process 1000 new trades per update
-
-vpin_updates_minutes <- list()
-
-for (i in seq(from = initial_rows, to = nrow(hft_data), by = chunk_size)) {
-    current_data <- hft_data[1:i, ]
-  vpin_results <- vpin(current_data, verbose = FALSE)
-    if (nrow(vpin_results@bucketdata) > 0) {
-    
-    latest_vpin <- tail(vpin_results@bucketdata$vpin, 1)
-    latest_timestamp <- tail(vpin_results@bucketdata$endtime, 1)
-    
-    cat(sprintf("Time: %s  |  Trades Processed: %d  |  Latest VPIN: %.4f\n",
-                format(latest_timestamp, "%H:%M:%S"),
-                i,
-                latest_vpin))
-    
-    update_key <- format(latest_timestamp, "%Y-%m-%d %H:%M:%S")
-    vpin_updates_minutes[[update_key]] <- latest_vpin
-  }
-}
-
-cat("--------------------------------------\n")
-cat("...Simulation finished.\n")
-
-
-if (length(vpin_updates_minutes) > 0) {
-  vpin_minutes <- data.frame(
-    timestamp = as.POSIXct(names(vpin_updates_minutes)),
-    vpin = unlist(vpin_updates_minutes)
-  )
-  
-  plot(vpin_minutes$timestamp, vpin_minutes$vpin, type = 'l', col = "blue",
-       xlab = "Time", ylab = "VPIN Estimate",
-       main = "Simulated Continuous VPIN Updates for Trade_Minutes_clean")
-  grid()
-} else {
-  cat("Not enough data to generate VPIN updates. Try with a larger dataset or smaller vpin() parameters.\n")
-}
-
+#   
+# hft_data <- data.frame(
+#   timestamp = Trade_clean$datetime,
+#   price = Trade_clean$PRICE,
+#   volume = Trade_clean$SIZE
+# )
+# 
+# # We'll start with an initial "burn-in" period to get the first calculation.
+# # Let's use the first 5 minutes of data as our starting point.
+# initial_burn_in_time <- hft_data$timestamp[1] + (30 * 60) # 5 minutes * 60 seconds
+# initial_rows <- which(hft_data$timestamp >= initial_burn_in_time)[1]
+# 
+# # If the dataset is shorter than 5 minutes, we'll adjust.
+# if (is.na(initial_rows)) {
+#   initial_rows <- nrow(hft_data)
+# }
+# 
+# chunk_size <- 5000 # Process 5000 new trades per update
+# 
+# vpin_updates_minutes <- list()
+# 
+# for (i in seq(from = initial_rows, to = nrow(hft_data), by = chunk_size)) {
+#     current_data <- hft_data[1:i, ]
+#   vpin_results <- vpin(current_data, verbose = FALSE)
+#     if (nrow(vpin_results@bucketdata) > 0) {
+#     
+#     latest_vpin <- tail(vpin_results@bucketdata$vpin, 1)
+#     latest_timestamp <- tail(vpin_results@bucketdata$endtime, 1)
+#     
+#     cat(sprintf("Time: %s  |  Trades Processed: %d  |  Latest VPIN: %.4f\n",
+#                 format(latest_timestamp, "%H:%M:%S"),
+#                 i,
+#                 latest_vpin))
+#     
+#     update_key <- format(latest_timestamp, "%Y-%m-%d %H:%M:%S")
+#     vpin_updates_minutes[[update_key]] <- latest_vpin
+#   }
+# }
+# 
+# cat("--------------------------------------\n")
+# cat("...Simulation finished.\n")
+# 
+# 
+# if (length(vpin_updates_minutes) > 0) {
+#   vpin_minutes <- data.frame(
+#     timestamp = as.POSIXct(names(vpin_updates_minutes)),
+#     vpin = unlist(vpin_updates_minutes)
+#   )
+#   
+#   plot(vpin_minutes$timestamp, vpin_minutes$vpin, type = 'l', col = "blue",
+#        xlab = "Time", ylab = "VPIN Estimate",
+#        main = "Simulated Continuous VPIN Updates for Trade_Minutes_clean")
+#   grid()
+# } else {
+#   cat("Not enough data to generate VPIN updates. Try with a larger dataset or smaller vpin() parameters.\n")
+# }
+# 
 }, silent = TRUE)
-
-## For the speech dataset (14:25 to 14:55).
-
-tryCatch({
-  
-hft_data <- data.frame(
-  timestamp = Trade_clean$datetime,
-  price = Trade_clean$PRICE,
-  volume = Trade_clean$SIZE
-)
-
-# We'll start with an initial "burn-in" period to get the first calculation.
-# Let's use the first 5 minutes of data as our starting point.
-initial_burn_in_time <- hft_data$timestamp[1] + (5 * 60) # 5 minutes * 60 seconds
-initial_rows <- which(hft_data$timestamp >= initial_burn_in_time)[1]
-
-# If the dataset is shorter than 5 minutes, we'll adjust.
-if (is.na(initial_rows)) {
-  initial_rows <- nrow(hft_data)
-}
-
-chunk_size <- 1000 # Process 1000 new trades per update
-
-vpin_updates_speech <- list()
-
-for (i in seq(from = initial_rows, to = nrow(hft_data), by = chunk_size)) {
-  current_data <- hft_data[1:i, ]
-  vpin_results <- vpin(current_data, verbose = FALSE)
-  if (nrow(vpin_results@bucketdata) > 0) {
-    
-    latest_vpin <- tail(vpin_results@bucketdata$vpin, 1)
-    latest_timestamp <- tail(vpin_results@bucketdata$endtime, 1)
-    
-    cat(sprintf("Time: %s  |  Trades Processed: %d  |  Latest VPIN: %.4f\n",
-                format(latest_timestamp, "%H:%M:%S"),
-                i,
-                latest_vpin))
-    
-    update_key <- format(latest_timestamp, "%Y-%m-%d %H:%M:%S")
-    vpin_updates_speech[[update_key]] <- latest_vpin
-  }
-}
-
-cat("--------------------------------------\n")
-cat("...Simulation finished.\n")
-
-
-if (length(vpin_updates_speech) > 0) {
-  vpin_speech <- data.frame(
-    timestamp = as.POSIXct(names(vpin_updates_speech)),
-    vpin = unlist(vpin_updates_speech)
-  )
-  
-  plot(vpin_speech$timestamp, vpin_speech$vpin, type = 'l', col = "blue",
-       xlab = "Time", ylab = "VPIN Estimate",
-       main = "Simulated Continuous VPIN Updates for Trade_Minutes_clean")
-  grid()
-} else {
-  cat("Not enough data to generate VPIN updates. Try with a larger dataset or smaller vpin() parameters.\n")
-}
-
-}, silent = TRUE)
-
 
 #==== 06b - Visualisation =====================================================#
 
-if (!is.null(vpin_minutes) && !is.null(vpin_speech)) {
+tryCatch({
   
-  cat("\nGenerating comparative plot...\n")
-  
-  # Plot 1: VPIN for the first dataset
-  p1 <- ggplot(vpin_minutes, aes(x = timestamp, y = vpin)) +
-    geom_line(color = "dodgerblue", size = 1) +
-    labs(
-      title = "VPIN Evolution (13:55 - 14:25)",
-      subtitle = "Standard trading period",
-      x = "Time",
-      y = "VPIN Estimate"
-    ) +
-    theme_minimal() +
-    theme(plot.title = element_text(face = "bold"))
-  
-  # Plot 2: VPIN for the speech dataset
-  p2 <- ggplot(vpin_speech, aes(x = timestamp, y = vpin)) +
-    geom_line(color = "firebrick", size = 1) +
-    labs(
-      title = "VPIN Evolution (14:25 - 14:55)",
-      subtitle = "Trading period during speech",
-      x = "Time",
-      y = "VPIN Estimate"
-    ) +
-    theme_minimal() +
-    theme(plot.title = element_text(face = "bold"))
-  
-  # Combine the two plots vertically using patchwork
-  combined_plot <- p1 | p2
-  
-  # Display the combined plot
-  print(combined_plot)
-  
-  Path <- file.path(Charts_Directory, "03_VPN_Combined_Plot.png")
-  ggsave(
-    filename = Path,
-    plot = combined_plot,
-    width = 3750,
-    height = 1833,
-    units = "px",
-    dpi = 300,
-    limitsize = FALSE
-  )
-  
-} else {
-  cat("\nCould not generate the comparative plot because one or both simulations failed to produce data.\n")
-}
+# if (!is.null(vpin_minutes) && !is.null(vpin_speech)) {
+#   
+#   cat("\nGenerating comparative plot...\n")
+#   
+#   # Plot 1: VPIN for the first dataset
+#   p1 <- ggplot(vpin_minutes, aes(x = timestamp, y = vpin)) +
+#     geom_line(color = "dodgerblue", size = 1) +
+#     labs(
+#       title = "VPIN Evolution (13:55 - 14:25)",
+#       subtitle = "Standard trading period",
+#       x = "Time",
+#       y = "VPIN Estimate"
+#     ) +
+#     theme_minimal() +
+#     theme(plot.title = element_text(face = "bold"))
+#   
+#   # Plot 2: VPIN for the speech dataset
+#   p2 <- ggplot(vpin_speech, aes(x = timestamp, y = vpin)) +
+#     geom_line(color = "firebrick", size = 1) +
+#     labs(
+#       title = "VPIN Evolution (14:25 - 14:55)",
+#       subtitle = "Trading period during speech",
+#       x = "Time",
+#       y = "VPIN Estimate"
+#     ) +
+#     theme_minimal() +
+#     theme(plot.title = element_text(face = "bold"))
+#   
+#   # Combine the two plots vertically using patchwork
+#   combined_plot <- p1 | p2
+#   
+#   # Display the combined plot
+#   print(combined_plot)
+#   
+#   Path <- file.path(Charts_Directory, "03_VPN_Combined_Plot.png")
+#   ggsave(
+#     filename = Path,
+#     plot = combined_plot,
+#     width = 3750,
+#     height = 1833,
+#     units = "px",
+#     dpi = 300,
+#     limitsize = FALSE
+#   )
+#   
+# } else {
+#   cat("\nCould not generate the comparative plot because one or both simulations failed to produce data.\n")
+# }
+
+}, silent = TRUE)
 
 #==============================================================================#
 #==============================================================================#
