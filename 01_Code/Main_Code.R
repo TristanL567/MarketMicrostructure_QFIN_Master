@@ -9,7 +9,8 @@
 silent=F
 .libPaths()
 
-Path <- "C:/Users/TristanLeiter/Documents/Privat/Market_Microstructure/04_Presentation/MarketMicrostructure_QFIN_Master"
+# Path <- "C:/Users/TristanLeiter/Documents/Privat/Market_Microstructure/04_Presentation/MarketMicrostructure_QFIN_Master"
+Path <- file.path(here::here(""))
 
 #==== 1A - Libraries ==========================================================#
 
@@ -21,7 +22,8 @@ packages <- c("dplyr", "tidyr", "lubridate",
               "usethis",
               "PINstimation",
               "sandwich",    ## For Neway-West adjusted SE.
-              "lmtest"
+              "lmtest",
+              "here"
               )
 
 for(i in 1:length(packages)){
