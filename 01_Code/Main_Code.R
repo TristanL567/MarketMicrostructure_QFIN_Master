@@ -23,7 +23,8 @@ packages <- c("dplyr", "tidyr", "lubridate",
               "PINstimation",
               "sandwich",    ## For Neway-West adjusted SE.
               "lmtest",
-              "here"
+              "here",
+              "hms"
               )
 
 for(i in 1:length(packages)){
@@ -583,8 +584,9 @@ tryCatch({
 #==== 03f - Output & Returning ================================================#
     
 names(Kyle_Regression_Output) <- c("Full period", "Full Period (NW)",
-                                       "Subperiod 1", "Subperiod 1 (NW)",
-                                       "Subperiod 2", "Subperiod 2 (NW)")
+                                   "Subperiod 1", "Subperiod 1 (NW)",
+                                   "Subperiod 2", "Subperiod 2 (NW)")
+
 Kyle_Regression_Output_Controls_All[[file]] <- Kyle_Regression_Output
     
 Lambda_results_Controls_Output[[file]] <- lambda_results
