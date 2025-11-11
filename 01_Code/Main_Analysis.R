@@ -24,7 +24,8 @@ packages <- c("dplyr", "tidyr", "lubridate",
               "here",
               "purrr", "ggrepel",
               "hms",
-              "stargazer"
+              "stargazer",
+              "sandwich", "lmtest"
               )
 
 for(i in 1:length(packages)){
@@ -626,7 +627,7 @@ nw_t  <- Output_plot$statistic[match_index]
 nw_p  <- Output_plot$p.value[match_index]
 reg_labels <- model_coef_names[model_coef_names != "(Intercept)"]
 
-  Path <- file.path(Charts_Aggregate_Directory, "2a_Regression_Summary_20250129.html")
+  Path <- file.path(Charts_Aggregate_Directory, "2a_Regression_Summary_FOMC_20250319.html")
 
   stargazer(
       reg_model,
@@ -640,13 +641,49 @@ reg_labels <- model_coef_names[model_coef_names != "(Intercept)"]
       # covariate.labels = reg_labels,
       header = FALSE,
       align = TRUE,
+      digits = 8,
       omit.stat = c("f", "adj.rsq", "ll"),
       notes = paste0("Standard errors are Newey-West robust (lag=", lag_NW, ").")
     )
   
-})
+}, silent = TRUE)
 
+## Control.
 
+tryCatch({
+  
+  date_selected <- Controls_Dates[2]
+  reg_model <- Kyle_Regression_Output_Controls_All[[date_selected]]$`Full period`
+  Output_plot <- Kyle_Regression_Output_Controls_All[[date_selected]]$`Full Period (NW)`
+  model_coef_names <- names(coef(reg_model))
+  
+  match_index <- match(model_coef_names, Output_plot$term)
+  
+  nw_se <- Output_plot$std.error[match_index]
+  nw_t  <- Output_plot$statistic[match_index]
+  nw_p  <- Output_plot$p.value[match_index]
+  reg_labels <- model_coef_names[model_coef_names != "(Intercept)"]
+  
+  Path <- file.path(Charts_Aggregate_Directory, "2b_Regression_Summary_Control_20250327.html")
+  
+  stargazer(
+    reg_model,
+    type = "html",
+    out = Path,
+    se = list(nw_se),
+    t  = list(nw_t),
+    p  = list(nw_p),
+    title = "",
+    dep.var.labels = "Price Change",
+    # covariate.labels = reg_labels,
+    header = FALSE,
+    align = TRUE,
+    digits = 8,
+    omit.stat = c("f", "adj.rsq", "ll"),
+    notes = paste0("Standard errors are Newey-West robust (lag=", lag_NW, ").")
+  )
+  
+}, silent = TRUE)
 
 
 
