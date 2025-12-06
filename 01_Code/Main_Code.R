@@ -945,12 +945,10 @@ save_file_path <- "Kyle_Regression_Results.RData"
 
 print(paste("Saving to:", getwd()))
 
-# 2. Save
+# Save
 save(Kyle_Regression_Output_All, 
      Kyle_Regression_Output_Controls_All, 
      file = save_file_path)
-
-print("Success! File saved.")
 
 #==============================================================================#
 #==============================================================================#
