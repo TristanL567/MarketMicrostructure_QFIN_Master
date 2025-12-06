@@ -1,0 +1,119 @@
+\documentclass{report}\usepackage[]{graphicx}\usepackage[]{xcolor}
+% maxwidth is the original width if it is less than linewidth
+% otherwise use linewidth (to make sure the graphics do not exceed the margin)
+\makeatletter
+\def\maxwidth{ %
+  \ifdim\Gin@nat@width>\linewidth
+    \linewidth
+  \else
+    \Gin@nat@width
+  \fi
+}
+\makeatother
+
+\definecolor{fgcolor}{rgb}{0.345, 0.345, 0.345}
+\newcommand{\hlnum}[1]{\textcolor[rgb]{0.686,0.059,0.569}{#1}}%
+\newcommand{\hlstr}[1]{\textcolor[rgb]{0.192,0.494,0.8}{#1}}%
+\newcommand{\hlcom}[1]{\textcolor[rgb]{0.678,0.584,0.686}{\textit{#1}}}%
+\newcommand{\hlopt}[1]{\textcolor[rgb]{0,0,0}{#1}}%
+\newcommand{\hlstd}[1]{\textcolor[rgb]{0.345,0.345,0.345}{#1}}%
+\newcommand{\hlkwa}[1]{\textcolor[rgb]{0.161,0.373,0.58}{\textbf{#1}}}%
+\newcommand{\hlkwb}[1]{\textcolor[rgb]{0.69,0.353,0.396}{#1}}%
+\newcommand{\hlkwc}[1]{\textcolor[rgb]{0.333,0.667,0.333}{#1}}%
+\newcommand{\hlkwd}[1]{\textcolor[rgb]{0.737,0.353,0.396}{\textbf{#1}}}%
+\let\hlipl\hlkwb
+
+\usepackage{framed}
+\makeatletter
+\newenvironment{kframe}{%
+ \def\at@end@of@kframe{}%
+ \ifinner\ifhmode%
+  \def\at@end@of@kframe{\end{minipage}}%
+  \begin{minipage}{\columnwidth}%
+ \fi\fi%
+ \def\FrameCommand##1{\hskip\@totalleftmargin \hskip-\fboxsep
+ \colorbox{shadecolor}{##1}\hskip-\fboxsep
+     % There is no \\@totalrightmargin, so:
+     \hskip-\linewidth \hskip-\@totalleftmargin \hskip\columnwidth}%
+ \MakeFramed {\advance\hsize-\width
+   \@totalleftmargin\z@ \linewidth\hsize
+   \@setminipage}}%
+ {\par\unskip\endMakeFramed%
+ \at@end@of@kframe}
+\makeatother
+
+\definecolor{shadecolor}{rgb}{.97, .97, .97}
+\definecolor{messagecolor}{rgb}{0, 0, 0}
+\definecolor{warningcolor}{rgb}{1, 0, 1}
+\definecolor{errorcolor}{rgb}{1, 0, 0}
+\newenvironment{knitrout}{}{} % an empty environment to be redefined in TeX
+
+\usepackage{alltt}
+
+\usepackage[left=2cm, right=2cm, top=1cm, bottom=2cm]{geometry}
+\usepackage[round,authoryear]{natbib} 
+
+\title{Market Microstructure}
+\author{Mariia, Raaif, Jan and Tristan}
+\date{\today}
+
+%==== DOCUMENT START ==========================================================%
+
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\begin{document}
+
+\maketitle
+
+%==== ABSTRACT ================================================================%
+
+% \begin{abstract}
+% This report demonstrates the integration of R code and its output within a LaTeX document using Sweave. It covers the basic structure of a report, including a summary, chapters with subchapters, and a bibliography.
+% \end{abstract}
+
+%==== Table of content ========================================================%
+
+\tableofcontents
+\newpage
+
+%==== Introduction ============================================================%
+
+\chapter{Introduction}
+
+Monetary policy announcements by the Federal Open Market Committee (FOMC) are among the most influential scheduled events in global financial markets. Decisions and statements issued by the Federal Open Market Committee (FOMC) directly influence expectations about future interest rates, risk premia, and macroeconomic conditions. Consequently, asset prices adjust within seconds once new policy information is released, and markets display pronounced spikes in volatility, trading volume, and liquidity demand \citep{Andersen2003, FlemingPiazzesi2005}. Beyond their well-documented effects on aggregate returns, these announcements also generate temporary but severe dislocations in market microstructure variables. Spreads widen, depth collapses, and order flow becomes highly imbalanced as market participants face heightened uncertainty and information asymmetry during the release window \citep{Chung2013}. Understanding these short-lived but structurally significant disruptions is essential for interpreting how financial markets process public information in real time.
+
+A central question is whether price discovery during these events proceeds gradually through the sequence of trades, or whether prices adjust almost instantaneously via revisions in quoted bid and ask prices. Classic market microstructure models, such as \citet{Kyle1985} and \citet{GlostenMilgrom1985}, posit that prices reflect the ongoing interaction of informed and uninformed traders, with order flow serving as a key channel through which private information is revealed. In such settings, the price impact of order flow -- commonly summarised by Kyle’s Lambda -- should increase during periods of elevated information asymmetry. In contrast, if new information arrives publicly, liquidity providers may adjust quotes immediately, resulting in discontinuous price jumps and limited informational content in subsequent order flow.
+
+This paper investigates the intraday mechanism of price discovery around FOMC announcements using high-frequency trades and quotes for the SPY ETF obtained from the WRDS TAQ database. We analyse seven announcement days in 2025 and compare them to a set of non-announcement control days that share similar market conditions but lack scheduled macroeconomic news. The analysis focuses on a three-hour window from 13:00 to 16:00 ET,  The first half of the period,from 13:00:00 to 14:25:00 relates to the release of the written statement after each FOMC meeting whilst the second period, from 14:25:00 to 16:00:00 is associated with the speech by the FED-chairman and the subsequent Q\&A session.
+
+Our empirical strategy builds on the structure of Kyle’s price impact model. Using the Lee–Ready algorithm \citep{LeeReady1991}, we classify trade direction and construct measures of signed trading volume. We then estimate a regression of midquote returns on trade direction, signed volume, and changes in trade direction, using Newey–West standard errors to account for heteroskedasticity and autocorrelation. This framework enables us to decompose intraday price changes into three conceptually distinct components: (i) fixed directional effects driven by buy versus sell pressure, (ii) information-related price impact proportional to trade size, and (iii) short-lived transitory effects often associated with inventory management or bid–ask bounce \citep{Roll1984}. By estimating this model both in aggregate and within short rolling windows, we are able to track in real time how the informational role of order flow evolves during the announcement window.
+
+
+Our findings reveal ...
+
+The remainder of the report is structured as follows...
+
+
+
+\chapter{Literature Review}
+
+The literature relevant to our study spans three main areas: (i) empirical evidence on monetary policy announcements and their effects on asset prices, (ii) research on market liquidity and microstructure dynamics around high-information events, and (iii) work on intraday price discovery and the mechanisms through which markets incorporate macroeconomic information. 
+
+A large body of research documents that monetary policy announcements generate immediate and sizable reactions in financial markets. \citet{Andersen2003} show that macroeconomic news produces pronounced jumps in returns and volatility in foreign exchange markets, emphasizing the speed at which public information is incorporated into prices. In fixed income markets, \citet{FlemingPiazzesi2005} use tick-level Treasury data and find sharp yield adjustments within seconds of FOMC statements, accompanied by temporary illiquidity. Beyond immediate reactions, monetary policy communication also shapes systematic return patterns. The “pre-FOMC announcement drift” identified by \citet{Lucca2015} shows that U.S. equities earn unusually high excess returns in the 24 hours preceding scheduled announcements, consistent with elevated risk premia and anticipation effects. Other studies show that uncertainty declines sharply once the statement is released, generating large but short-lived movements in volatility and risk measures \citep{Bredin2010}.
+
+A growing literature analyzes how liquidity conditions change around monetary policy events. \citet{Chung2013} document that bid–ask spreads widen and market depth declines immediately before FOMC announcements, consistent with liquidity providers withdrawing due to heightened uncertainty and adverse-selection risk. Similarly, \citet{FlemingPiazzesi2005} find that liquidity in Treasury markets deteriorates around announcements, and spreads normalize only once uncertainty resolves. Research on intraday equity liquidity shows that market makers adjust their quotes aggressively during macro releases, leading to temporary freezes in order book activity. These findings align closely with our empirical patterns: we observe widening spreads, reduced trade informativeness, and diminished price impact in the minutes surrounding the 14:00 release. Most importantly for our regression results, this literature suggests that during announcement windows, order flow becomes less informative, consistent with a decreasing Kyle’s $\lambda$. Liquidity providers respond to uncertainty by repricing immediately rather than relying on trade signaling.
+
+High-frequency studies on price discovery examine how markets integrate new information at sub-second horizons. \citet{Andersen2003} show that macro announcements generate instantaneous quote revisions even without trade executions, implying that price discovery is quote-driven rather than trade-driven during major announcement events. \citet{FlemingPiazzesi2005} reach a similar conclusion for Treasury markets, where yields adjust through discontinuous jumps rather than gradual order-flow-driven changes.
+
+This work contrasts with classic microstructure theory. In models such as \citet{Kyle1985} and \citet{GlostenMilgrom1985}, trades are the primary mechanism through which private information enters prices. Kyle’s $\lambda$ should be positive when order flow is informative. However, when information is fully public - as in scheduled FOMC announcements-trade-based price discovery should largely disappear.
+
+Our study offers two primary contributions. First, we extend the literature on monetary policy announcements by examining the mechanism of intraday price discovery using microstructure variables. Rather than focusing solely on returns or volatility, we employ Kyle-style price impact regressions to evaluate how the informativeness of order flow evolves around FOMC events.
+
+Second, we introduce a direct comparison between FOMC announcement days and matched non-announcement control days. This design isolates how scheduled public information releases alter liquidity, order flow, and the structure of price formation. By contrasting informational regimes, our work connects high-frequency microstructure behaviour to macroeconomic announcement dynamics and provides new insights into how markets incorporate public information.
+
+
+\bibliographystyle{apalike}
+\bibliography{references}
+
+
+\end{document}
+
