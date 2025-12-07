@@ -249,25 +249,38 @@ Price_Impact_Regressions[[6]] <- price_impact_second_period_SE_adjusted
 
 tryCatch({
   
+  # lambda_over_time_nw <- regression_data %>%
+  #   mutate(window_start = floor_date(datetime, "2 minutes")) %>%
+  #   group_by(window_start) %>%
+  #   nest() %>%
+  #       # mutate(model = map(data, ~ lm(delta_p ~ d_t + q_t + delta_d_t, data = .x))) %>%
+  #       mutate(model = map(data, ~ lm(delta_p ~ d_t + q_t + lag_q_t + delta_d_t, data = .x))) %>%
+  #       mutate(nw_tidied = map(model, ~ {
+  #           nw_vcov <- sandwich::NeweyWest(.x, 
+  #                                    lag = lag_NW, 
+  #                                    prewhite = FALSE, 
+  #                                    adjust = TRUE)
+  #           nw_coefs <- lmtest::coeftest(.x, vcov. = nw_vcov)
+  #           broom::tidy(nw_coefs)
+  #   }))
+  # 
+  # lambda_results_nw <- lambda_over_time_nw %>%
+  #   unnest(nw_tidied) %>% 
+  #   filter(term == "q_t") %>% 
+  #   select(window_start, estimate, p.value) %>%
+  #   ungroup()
+  
+########## New Code.
+  
   lambda_over_time_nw <- regression_data %>%
     mutate(window_start = floor_date(datetime, "2 minutes")) %>%
     group_by(window_start) %>%
     nest() %>%
-        # mutate(model = map(data, ~ lm(delta_p ~ d_t + q_t + delta_d_t, data = .x))) %>%
-        mutate(model = map(data, ~ lm(delta_p ~ d_t + q_t + lag_q_t + delta_d_t, data = .x))) %>%
-        mutate(nw_tidied = map(model, ~ {
-            nw_vcov <- sandwich::NeweyWest(.x, 
-                                     lag = lag_NW, 
-                                     prewhite = FALSE, 
-                                     adjust = TRUE)
-            nw_coefs <- lmtest::coeftest(.x, vcov. = nw_vcov)
-            broom::tidy(nw_coefs)
-    }))
+    mutate(structural_stats = map(data, ~ PriceImpact_Short(.x, lag_nw = lag_NW)))
   
   lambda_results_nw <- lambda_over_time_nw %>%
-    unnest(nw_tidied) %>% 
-    filter(term == "q_t") %>% 
-    select(window_start, estimate, p.value) %>%
+    unnest(structural_stats) %>%
+    select(window_start, term, estimate, std.error, p.value) %>%
     ungroup()
 
 }, silent = TRUE)
@@ -449,26 +462,16 @@ Price_Impact_Regressions[[4]] <- price_impact_first_period_SE_adjusted
     
 tryCatch({
       
-      lambda_over_time_nw <- regression_data %>%
-        mutate(window_start = floor_date(datetime, "2 minutes")) %>%
-        group_by(window_start) %>%
-        nest() %>%
-        # mutate(model = map(data, ~ lm(delta_p ~ d_t + q_t + delta_d_t, data = .x))) %>%
-        mutate(model = map(data, ~ lm(delta_p ~ d_t + q_t + lag_q_t + delta_d_t, data = .x))) %>%
-        mutate(nw_tidied = map(model, ~ {
-          nw_vcov <- sandwich::NeweyWest(.x, 
-                                         lag = lag_NW, 
-                                         prewhite = FALSE, 
-                                         adjust = TRUE)
-          nw_coefs <- lmtest::coeftest(.x, vcov. = nw_vcov)
-          broom::tidy(nw_coefs)
-        }))
-      
-      lambda_results_nw <- lambda_over_time_nw %>%
-        unnest(nw_tidied) %>% 
-        filter(term == "q_t") %>% 
-        select(window_start, estimate, p.value) %>%
-        ungroup()
+  lambda_over_time_nw <- regression_data %>%
+    mutate(window_start = floor_date(datetime, "2 minutes")) %>%
+    group_by(window_start) %>%
+    nest() %>%
+    mutate(structural_stats = map(data, ~ PriceImpact_Short(.x, lag_nw = lag_NW)))
+  
+  lambda_results_nw <- lambda_over_time_nw %>%
+    unnest(structural_stats) %>%
+    select(window_start, term, estimate, std.error, p.value) %>%
+    ungroup()
       
     }, silent = TRUE)
     
