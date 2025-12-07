@@ -611,11 +611,14 @@ Coefficient_Estimate_aggregate <- rowMeans(Coefficient_Estimate) ## Simple Avera
 #==== 04 - Visualisation ======================================================#
 #==============================================================================#
 
+date_variable <- 2
+output_stargazer <- list()
+
 #==== 04a - Regression Output (with stargazer) ================================#
 
 tryCatch({
   
-  date_selected <- FOMC_Dates[2]
+  date_selected <- FOMC_Dates[date_variable]
 reg_model <- Kyle_Regression_Output_All[[date_selected]]$`Full period`
 Output_plot <- Kyle_Regression_Output_All[[date_selected]]$`Full Period (NW)`
 model_coef_names <- names(coef(reg_model))
@@ -627,18 +630,21 @@ nw_t  <- Output_plot$statistic[match_index]
 nw_p  <- Output_plot$p.value[match_index]
 reg_labels <- model_coef_names[model_coef_names != "(Intercept)"]
 
-  Path <- file.path(Charts_Aggregate_Directory, "2a_Regression_Summary_FOMC_20250319.html")
+output_stargazer[[1]] <- list(reg_model, nw_t, nw_p)
+
+Path <- file.path(Charts_Aggregate_Directory, "2a_Regression_Summary_FOMC_20250319.html")
 
   stargazer(
       reg_model,
       type = "html",
       out = Path,
-      se = list(nw_se),
+      se = list(nw_t),  # <-- CHANGED: Pass t-stats to the 'se' argument
       t  = list(nw_t),
       p  = list(nw_p),
       title = "",
       dep.var.labels = "Price Change",
       # covariate.labels = reg_labels,
+      notes.append = FALSE, # <-- ADDED: Prevents default "Standard errors..." note
       header = FALSE,
       align = TRUE,
       digits = 8,
@@ -652,7 +658,7 @@ reg_labels <- model_coef_names[model_coef_names != "(Intercept)"]
 
 tryCatch({
   
-  date_selected <- Controls_Dates[2]
+  date_selected <- Controls_Dates[date_variable]
   reg_model <- Kyle_Regression_Output_Controls_All[[date_selected]]$`Full period`
   Output_plot <- Kyle_Regression_Output_Controls_All[[date_selected]]$`Full Period (NW)`
   model_coef_names <- names(coef(reg_model))
@@ -663,6 +669,7 @@ tryCatch({
   nw_t  <- Output_plot$statistic[match_index]
   nw_p  <- Output_plot$p.value[match_index]
   reg_labels <- model_coef_names[model_coef_names != "(Intercept)"]
+  output_stargazer[[2]] <- list(reg_model, nw_t, nw_p)
   
   Path <- file.path(Charts_Aggregate_Directory, "2b_Regression_Summary_Control_20250327.html")
   
@@ -670,13 +677,14 @@ tryCatch({
     reg_model,
     type = "html",
     out = Path,
-    se = list(nw_se),
+    se = list(nw_t),
     t  = list(nw_t),
     p  = list(nw_p),
     title = "",
     dep.var.labels = "Price Change",
     # covariate.labels = reg_labels,
     header = FALSE,
+    notes.append = FALSE, # <-- ADDED: Prevents default "Standard errors..." note
     align = TRUE,
     digits = 8,
     omit.stat = c("f", "adj.rsq", "ll"),
@@ -686,8 +694,202 @@ tryCatch({
 }, silent = TRUE)
 
 
+#==== 04b - Regression Output (Subperiod 1) ===================================#
 
-#==== 04b - Bid-ask spread & reaction of the MM ===============================#
+tryCatch({
+  
+  date_selected <- FOMC_Dates[date_variable]
+  reg_model <- Kyle_Regression_Output_All[[date_selected]]$`Subperiod 1`
+  Output_plot <- Kyle_Regression_Output_All[[date_selected]]$`Subperiod 1 (NW)`
+  model_coef_names <- names(coef(reg_model))
+  
+  match_index <- match(model_coef_names, Output_plot$term)
+  
+  nw_se <- Output_plot$std.error[match_index]
+  nw_t  <- Output_plot$statistic[match_index]
+  nw_p  <- Output_plot$p.value[match_index]
+  reg_labels <- model_coef_names[model_coef_names != "(Intercept)"]
+  output_stargazer[[3]] <- list(reg_model, nw_t, nw_p)
+  
+  Path <- file.path(Charts_Aggregate_Directory, "3a_Regression_Subperiod1_Summary_FOMC_20250319.html")
+  
+  stargazer(
+    reg_model,
+    type = "html",
+    out = Path,
+    se = list(nw_t),  # <-- CHANGED: Pass t-stats to the 'se' argument
+    t  = list(nw_t),
+    p  = list(nw_p),
+    title = "",
+    dep.var.labels = "Price Change",
+    # covariate.labels = reg_labels,
+    notes.append = FALSE, # <-- ADDED: Prevents default "Standard errors..." note
+    header = FALSE,
+    align = TRUE,
+    digits = 8,
+    omit.stat = c("f", "adj.rsq", "ll"),
+    notes = paste0("Standard errors are Newey-West robust (lag=", lag_NW, ").")
+  )
+  
+}, silent = TRUE)
+
+## Control.
+
+tryCatch({
+  
+  date_selected <- Controls_Dates[date_variable]
+  reg_model <- Kyle_Regression_Output_Controls_All[[date_selected]]$`Subperiod 1`
+  Output_plot <- Kyle_Regression_Output_Controls_All[[date_selected]]$`Subperiod 1 (NW)`
+  model_coef_names <- names(coef(reg_model))
+  
+  match_index <- match(model_coef_names, Output_plot$term)
+  
+  nw_se <- Output_plot$std.error[match_index]
+  nw_t  <- Output_plot$statistic[match_index]
+  nw_p  <- Output_plot$p.value[match_index]
+  reg_labels <- model_coef_names[model_coef_names != "(Intercept)"]
+  output_stargazer[[4]] <- list(reg_model, nw_t, nw_p)
+  
+  Path <- file.path(Charts_Aggregate_Directory, "3b_Regression_Subperiod1_Summary_Control_20250327.html")
+  
+  stargazer(
+    reg_model,
+    type = "html",
+    out = Path,
+    se = list(nw_t),
+    t  = list(nw_t),
+    p  = list(nw_p),
+    title = "",
+    dep.var.labels = "Price Change",
+    # covariate.labels = reg_labels,
+    header = FALSE,
+    notes.append = FALSE, # <-- ADDED: Prevents default "Standard errors..." note
+    align = TRUE,
+    digits = 8,
+    omit.stat = c("f", "adj.rsq", "ll"),
+    notes = paste0("Standard errors are Newey-West robust (lag=", lag_NW, ").")
+  )
+  
+}, silent = TRUE)
+
+#==== 04c - Regression Output (Subperiod 2) ===================================#
+
+
+tryCatch({
+  
+  date_selected <- FOMC_Dates[date_variable]
+  reg_model <- Kyle_Regression_Output_All[[date_selected]]$`Subperiod `
+  Output_plot <- Kyle_Regression_Output_All[[date_selected]]$`Subperiod 2 (NW)`
+  model_coef_names <- names(coef(reg_model))
+  
+  match_index <- match(model_coef_names, Output_plot$term)
+  
+  nw_se <- Output_plot$std.error[match_index]
+  nw_t  <- Output_plot$statistic[match_index]
+  nw_p  <- Output_plot$p.value[match_index]
+  reg_labels <- model_coef_names[model_coef_names != "(Intercept)"]
+  output_stargazer[[5]] <- list(reg_model, nw_t, nw_p)
+  
+  Path <- file.path(Charts_Aggregate_Directory, "4a_Regression_Subperiod2_Summary_FOMC_20250319.html")
+  
+  stargazer(
+    reg_model,
+    type = "html",
+    out = Path,
+    se = list(nw_t),  # <-- CHANGED: Pass t-stats to the 'se' argument
+    t  = list(nw_t),
+    p  = list(nw_p),
+    title = "",
+    dep.var.labels = "Price Change",
+    # covariate.labels = reg_labels,
+    notes.append = FALSE, # <-- ADDED: Prevents default "Standard errors..." note
+    header = FALSE,
+    align = TRUE,
+    digits = 8,
+    omit.stat = c("f", "adj.rsq", "ll"),
+    notes = paste0("Standard errors are Newey-West robust (lag=", lag_NW, ").")
+  )
+  
+}, silent = TRUE)
+
+## Control.
+
+tryCatch({
+  
+  date_selected <- Controls_Dates[date_variable]
+  reg_model <- Kyle_Regression_Output_Controls_All[[date_selected]]$`Subperiod 2`
+  Output_plot <- Kyle_Regression_Output_Controls_All[[date_selected]]$`Subperiod 2 (NW)`
+  model_coef_names <- names(coef(reg_model))
+  
+  match_index <- match(model_coef_names, Output_plot$term)
+  
+  nw_se <- Output_plot$std.error[match_index]
+  nw_t  <- Output_plot$statistic[match_index]
+  nw_p  <- Output_plot$p.value[match_index]
+  reg_labels <- model_coef_names[model_coef_names != "(Intercept)"]
+  output_stargazer[[6]] <- list(reg_model, nw_t, nw_p)
+  
+  Path <- file.path(Charts_Aggregate_Directory, "4b_Regression_Subperiod2_Summary_Control_20250327.html")
+  
+  stargazer(
+    reg_model,
+    type = "html",
+    out = Path,
+    se = list(nw_t),
+    t  = list(nw_t),
+    p  = list(nw_p),
+    title = "",
+    dep.var.labels = "Price Change",
+    # covariate.labels = reg_labels,
+    header = FALSE,
+    notes.append = FALSE, # <-- ADDED: Prevents default "Standard errors..." note
+    align = TRUE,
+    digits = 8,
+    omit.stat = c("f", "adj.rsq", "ll"),
+    notes = paste0("Standard errors are Newey-West robust (lag=", lag_NW, ").")
+  )
+  
+}, silent = TRUE)
+
+#==== 04d - Regression Output (Combined) ======================================#
+
+Models_list <- lapply(output_stargazer, function(x) x[[1]])
+T_stat_list <- lapply(output_stargazer, function(x) x[[2]])
+p_val_list <- lapply(output_stargazer, function(x) x[[3]])
+
+Path <- file.path(Charts_Aggregate_Directory, "5a_Regression_Summary_20250327.html")
+
+stargazer(
+  Models_list,
+  type = "html",
+  out = Path,
+  se = list(T_stat_list[[1]], T_stat_list[[2]],
+            T_stat_list[[3]], T_stat_list[[4]],
+            T_stat_list[[5]], T_stat_list[[6]]),
+  t  = list(T_stat_list[[1]], T_stat_list[[2]],
+            T_stat_list[[3]], T_stat_list[[4]],
+            T_stat_list[[5]], T_stat_list[[6]]),
+  p  = list(p_val_list[[1]], p_val_list[[1]],
+            p_val_list[[3]], p_val_list[[4]],
+            p_val_list[[5]], p_val_list[[6]]),
+  title = "",
+  dep.var.labels = "Price Change",
+  column.labels = c("FOMC", 
+                    "Control",
+                    "FOMC (P.1)",
+                    "Control (P.1)",
+                    "FOMC (P.2)",
+                    "Control (P.2)"),
+  # covariate.labels = reg_labels,
+  header = FALSE,
+  notes.append = FALSE, # <-- ADDED: Prevents default "Standard errors..." note
+  align = TRUE,
+  digits = 8,
+  omit.stat = c("f", "adj.rsq", "ll"),
+  notes = paste0("Standard errors are Newey-West robust (lag=", lag_NW, ").")
+)
+
+#==== 04e - Bid-ask spread & reaction of the MM ===============================#
 
 
 #==============================================================================#
