@@ -178,28 +178,12 @@ Data <- Data %>%
 Data_adj <- Lee_Ready_Algo(Data)
 
 ## Prepare for the regressions.
-#regression_data <- Data_adj %>%
-#  mutate(q_t = d_t * SIZE) %>%
-#  mutate(delta_p = MIDQUOTE - lag(MIDQUOTE)) %>%
-#  mutate(delta_d_t = d_t - lag(d_t))
-
-#regression_data <- regression_data %>%
-#  filter(d_t != 0)
-#regression_data <- regression_data %>%
-#  drop_na(delta_p, delta_d_t)
-
-## Prepare for the regressions.
 regression_data <- Data_adj %>%
+  filter(d_t != 0) %>% 
   mutate(q_t = d_t * SIZE) %>%
   mutate(delta_p = MIDQUOTE - lag(MIDQUOTE)) %>%
   mutate(delta_d_t = d_t - lag(d_t)) %>%
-  # Add Lagged Order Flow for Inventory Risk
-  mutate(lag_q_t = lag(q_t)) 
-
-regression_data <- regression_data %>%
-  filter(d_t != 0) 
-# Drop NAs for the new lag column also
-regression_data <- regression_data %>%
+  mutate(lag_q_t = lag(q_t)) %>%
   drop_na(delta_p, delta_d_t, lag_q_t)
 
 #==== 02c - Kyle-Regression for the whole time period =========================#
@@ -217,10 +201,6 @@ Price_Impact_Regressions[[2]] <- price_impact_whole_period_SE_adjusted
 
 regression_data_filtered <- regression_data %>%
   filter(format(datetime, "%H:%M:%S") < "14:25:00")
-
-#kyle_model_period_1 <- lm(
-#  delta_p ~ d_t + q_t + delta_d_t, 
-#  data = regression_data_filtered)
 
 price_impact_first_period <- PriceImpactRegression(data = regression_data_filtered,
                                                    NeweyWest = FALSE)
@@ -248,29 +228,6 @@ Price_Impact_Regressions[[6]] <- price_impact_second_period_SE_adjusted
 ## Run the rolling regression for the short subperiods.
 
 tryCatch({
-  
-  # lambda_over_time_nw <- regression_data %>%
-  #   mutate(window_start = floor_date(datetime, "2 minutes")) %>%
-  #   group_by(window_start) %>%
-  #   nest() %>%
-  #       # mutate(model = map(data, ~ lm(delta_p ~ d_t + q_t + delta_d_t, data = .x))) %>%
-  #       mutate(model = map(data, ~ lm(delta_p ~ d_t + q_t + lag_q_t + delta_d_t, data = .x))) %>%
-  #       mutate(nw_tidied = map(model, ~ {
-  #           nw_vcov <- sandwich::NeweyWest(.x, 
-  #                                    lag = lag_NW, 
-  #                                    prewhite = FALSE, 
-  #                                    adjust = TRUE)
-  #           nw_coefs <- lmtest::coeftest(.x, vcov. = nw_vcov)
-  #           broom::tidy(nw_coefs)
-  #   }))
-  # 
-  # lambda_results_nw <- lambda_over_time_nw %>%
-  #   unnest(nw_tidied) %>% 
-  #   filter(term == "q_t") %>% 
-  #   select(window_start, estimate, p.value) %>%
-  #   ungroup()
-  
-########## New Code.
   
   lambda_over_time_nw <- regression_data %>%
     mutate(window_start = floor_date(datetime, "2 minutes")) %>%
@@ -395,29 +352,12 @@ matching_files <- grep(pattern = Date_used,
     ## Apply the Lee-ready algorithm to get the trade direction.
     Data_adj <- Lee_Ready_Algo(Data)
     
-    ## Prepare for the regressions.
-    #regression_data <- Data_adj %>%
-    #  mutate(q_t = d_t * SIZE) %>%
-    #  mutate(delta_p = MIDQUOTE - lag(MIDQUOTE)) %>%
-    #  mutate(delta_d_t = d_t - lag(d_t))
-    
-    #regression_data <- regression_data %>%
-    #  filter(d_t != 0)
-    #regression_data <- regression_data %>%
-    #  drop_na(delta_p, delta_d_t)
-    
-    ## Prepare for the regressions.
     regression_data <- Data_adj %>%
+      filter(d_t != 0) %>% 
       mutate(q_t = d_t * SIZE) %>%
       mutate(delta_p = MIDQUOTE - lag(MIDQUOTE)) %>%
       mutate(delta_d_t = d_t - lag(d_t)) %>%
-      # Add Lagged Order Flow for Inventory Risk
-      mutate(lag_q_t = lag(q_t)) 
-    
-    regression_data <- regression_data %>%
-      filter(d_t != 0) 
-    # Drop NAs for the new lag column as well
-    regression_data <- regression_data %>%
+      mutate(lag_q_t = lag(q_t)) %>%
       drop_na(delta_p, delta_d_t, lag_q_t)
     
 #==== 03c - Kyle-Regression for the whole time period =========================#
@@ -730,90 +670,90 @@ tryCatch({
 #==== 04 - Generate Results Table =============================================#
 
 # 1. Install/Load Stargazer
-if (!requireNamespace("stargazer", quietly = TRUE)) install.packages("stargazer")
-library(stargazer)
-library(sandwich) # Required for Newey-West
-library(lmtest)
-
-# 2. Select the Dates you want to compare
-# (Change the index numbers [1] to whichever date from your list you want to show)
-# Example: Using the first date in your FOMC list and first in Controls list
-fomc_date_idx <- 1 
-ctrl_date_idx <- 1
-
-# Retrieve the specific models from your nested lists
-# Based on your code structure: [[1]] is Full Period, [[3]] is P1, [[5]] is P2
-
-# --- Full Period ---
-model_1 <- Kyle_Regression_Output_All[[fomc_date_idx]][[1]]          # FOMC
-model_2 <- Kyle_Regression_Output_Controls_All[[ctrl_date_idx]][[1]] # Control
-
-# --- Period 1 ---
-model_3 <- Kyle_Regression_Output_All[[fomc_date_idx]][[3]]          # FOMC
-model_4 <- Kyle_Regression_Output_Controls_All[[ctrl_date_idx]][[3]] # Control
-
-# --- Period 2 ---
-model_5 <- Kyle_Regression_Output_All[[fomc_date_idx]][[5]]          # FOMC
-model_6 <- Kyle_Regression_Output_Controls_All[[ctrl_date_idx]][[5]] # Control
-
-# 3. Calculate Newey-West Standard Errors for the table
-# Stargazer needs the SEs passed explicitly to format the asterisks correctly
-get_nw_se <- function(model) {
-  sqrt(diag(sandwich::NeweyWest(model, lag = 6, prewhite = FALSE, adjust = TRUE)))
-}
-
-se_list <- list(
-  get_nw_se(model_1), get_nw_se(model_2),
-  get_nw_se(model_3), get_nw_se(model_4),
-  get_nw_se(model_5), get_nw_se(model_6)
-)
-
-# 4. Create the Table
-stargazer(
-  model_1, model_2, model_3, model_4, model_5, model_6,
-  type = "text", # Change to "html" or "latex" for final export
-  digits = 9,
-  title = "Regression Results: FOMC vs Control",
-  
-  # Custom Column Labels
-  column.labels = c("FOMC", "Control", "FOMC (P.1)", "Control (P.1)", "FOMC (P.2)", "Control (P.2)"),
-  
-  # Dependent Variable Label
-  dep.var.labels = "Price Change",
-  
-  # Independent Variable Labels (Make sure these match your variable order)
-  # "lag_q_t" is your new variable
-  covariate.labels = c(
-    "d_t (Direction)", 
-    "q_t (Order Flow)", 
-    "lag_q_t (Inventory Risk)", 
-    "delta_d_t (Transitory)", 
-    "Constant"
-  ),
-  
-  # Insert the computed Newey-West Errors
-  se = se_list,
-  
-  # Statistics to show (Matches your screenshot)
-  keep.stat = c("n", "rsq", "ser"), 
-  
-  # Adjust star cutoffs if necessary (default is usually fine: *0.1, **0.05, ***0.01)
-  star.cutoffs = c(0.1, 0.05, 0.01),
-  
-  # Footer notes
-  notes = "Standard errors are Newey-West robust (lag=6).",
-  notes.align = "r"
-)
-
-#####################################################
-save_file_path <- "Kyle_Regression_Results.RData"
-
-print(paste("Saving to:", getwd()))
-
-# Save
-save(Kyle_Regression_Output_All, 
-     Kyle_Regression_Output_Controls_All, 
-     file = save_file_path)
+# if (!requireNamespace("stargazer", quietly = TRUE)) install.packages("stargazer")
+# library(stargazer)
+# library(sandwich) # Required for Newey-West
+# library(lmtest)
+# 
+# # 2. Select the Dates you want to compare
+# # (Change the index numbers [1] to whichever date from your list you want to show)
+# # Example: Using the first date in your FOMC list and first in Controls list
+# fomc_date_idx <- 1 
+# ctrl_date_idx <- 1
+# 
+# # Retrieve the specific models from your nested lists
+# # Based on your code structure: [[1]] is Full Period, [[3]] is P1, [[5]] is P2
+# 
+# # --- Full Period ---
+# model_1 <- Kyle_Regression_Output_All[[fomc_date_idx]][[1]]          # FOMC
+# model_2 <- Kyle_Regression_Output_Controls_All[[ctrl_date_idx]][[1]] # Control
+# 
+# # --- Period 1 ---
+# model_3 <- Kyle_Regression_Output_All[[fomc_date_idx]][[3]]          # FOMC
+# model_4 <- Kyle_Regression_Output_Controls_All[[ctrl_date_idx]][[3]] # Control
+# 
+# # --- Period 2 ---
+# model_5 <- Kyle_Regression_Output_All[[fomc_date_idx]][[5]]          # FOMC
+# model_6 <- Kyle_Regression_Output_Controls_All[[ctrl_date_idx]][[5]] # Control
+# 
+# # 3. Calculate Newey-West Standard Errors for the table
+# # Stargazer needs the SEs passed explicitly to format the asterisks correctly
+# get_nw_se <- function(model) {
+#   sqrt(diag(sandwich::NeweyWest(model, lag = 6, prewhite = FALSE, adjust = TRUE)))
+# }
+# 
+# se_list <- list(
+#   get_nw_se(model_1), get_nw_se(model_2),
+#   get_nw_se(model_3), get_nw_se(model_4),
+#   get_nw_se(model_5), get_nw_se(model_6)
+# )
+# 
+# # 4. Create the Table
+# stargazer(
+#   model_1, model_2, model_3, model_4, model_5, model_6,
+#   type = "text", # Change to "html" or "latex" for final export
+#   digits = 9,
+#   title = "Regression Results: FOMC vs Control",
+#   
+#   # Custom Column Labels
+#   column.labels = c("FOMC", "Control", "FOMC (P.1)", "Control (P.1)", "FOMC (P.2)", "Control (P.2)"),
+#   
+#   # Dependent Variable Label
+#   dep.var.labels = "Price Change",
+#   
+#   # Independent Variable Labels (Make sure these match your variable order)
+#   # "lag_q_t" is your new variable
+#   covariate.labels = c(
+#     "d_t (Direction)", 
+#     "q_t (Order Flow)", 
+#     "lag_q_t (Inventory Risk)", 
+#     "delta_d_t (Transitory)", 
+#     "Constant"
+#   ),
+#   
+#   # Insert the computed Newey-West Errors
+#   se = se_list,
+#   
+#   # Statistics to show (Matches your screenshot)
+#   keep.stat = c("n", "rsq", "ser"), 
+#   
+#   # Adjust star cutoffs if necessary (default is usually fine: *0.1, **0.05, ***0.01)
+#   star.cutoffs = c(0.1, 0.05, 0.01),
+#   
+#   # Footer notes
+#   notes = "Standard errors are Newey-West robust (lag=6).",
+#   notes.align = "r"
+# )
+# 
+# #####################################################
+# save_file_path <- "Kyle_Regression_Results.RData"
+# 
+# print(paste("Saving to:", getwd()))
+# 
+# # Save
+# save(Kyle_Regression_Output_All, 
+#      Kyle_Regression_Output_Controls_All, 
+#      file = save_file_path)
 
 #==============================================================================#
 #==============================================================================#
