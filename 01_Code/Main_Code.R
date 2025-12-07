@@ -2,6 +2,8 @@
 #==== 00 - Description ========================================================#
 #==============================================================================#
 
+## Main Computations: Main results and preprocessing steps.
+
 #==============================================================================#
 #==== 1 - Working Directory & Libraries =======================================#
 #==============================================================================#
@@ -22,7 +24,7 @@ packages <- c("dplyr", "tidyr", "lubridate",
               "usethis",
               "PINstimation",
               "sandwich",    ## For Neway-West adjusted SE.
-              "lmtest",
+              "lmtest", "car",
               "here",
               "hms"
               )
@@ -92,12 +94,12 @@ Controls_Dates <- c("2025-02-04", "2025-03-27", "2025-05-20",
 lag_NW <- 6
 
 ## Output.
-Kyle_Regression_Output <- list()
-Kyle_Regression_Output_All <- list()
-Lambda_results_Output <- list()
+Price_Impact_Regressions <- list() ## Generic list.
+Price_Impact_Regressions_All <- list() ## Price Impact Reg. of the FOMC days.
+Lambda_results_Output <- list() ## Rolling Lambda FOMC days.
 
-Kyle_Regression_Output_Controls_All <- list()
-Lambda_results_Controls_Output <- list()
+Price_Impact_Regressions_Controls_All <- list() ## Price Impact Reg. of the Control days.
+Lambda_results_Controls_Output <- list() ## Rolling Lambda Control days.
 
 ## Plotting.
 blue <- "#004890"
@@ -201,52 +203,14 @@ regression_data <- regression_data %>%
   drop_na(delta_p, delta_d_t, lag_q_t)
 
 #==== 02c - Kyle-Regression for the whole time period =========================#
-# The formula is:
-# delta_p ~ d_t + q_t + lag_q_t + delta_d_t,
-#
 
-# First we need to calculate phi using AR(1) process
+price_impact_whole_period <- PriceImpactRegression(data = regression_data,
+                                                   NeweyWest = FALSE)
+price_impact_whole_period_SE_adjusted <- PriceImpactRegression(data = regression_data,
+                                                               NeweyWest = TRUE)
 
-ar1_model <- lm(q_t ~ lag_q_t, data = regression_data)
-phi <- coef(ar1_model)["lag_q_t"]
-
-
-
-# Where:
-# - 'delta_p' is the change in the midquote (your dependent variable)
-# - 'd_t' estimates λ₀ (fixed impact of direction)
-# - 'q_t' estimates λ₁ (Kyle's Lambda, the impact of signed size)
-# - 'delta_d_t' estimates γ (the transient, non-info cost component)
-# New - 'lag_q_t' to include Inventory Risk 
-## From 13:00:00 to 16:00:00
-
-#kyle_model_whole_period <- lm(
-#  delta_p ~ d_t + q_t + delta_d_t, 
-#  data = regression_data)
-
-kyle_model_whole_period <- lm(
-  delta_p ~ d_t + q_t + lag_q_t + delta_d_t, 
-  data = regression_data
-)
-
-nw_vcov <- NeweyWest(kyle_model_whole_period, lag = lag_NW, prewhite = FALSE, adjust = TRUE)
-coefs <- coeftest(kyle_model_whole_period, vcov. = nw_vcov)
-tidy_results <- broom::tidy(coefs)
-
-alpha <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(estimate)
-t_stat <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(statistic)
-model_stats <- broom::glance(kyle_model_whole_period) %>%
-  dplyr::rename(
-    f.statistic = statistic, 
-    f.p.value = p.value
-  )
-
-combined_summary <- tidyr::crossing(tidy_results, model_stats)
-combined_summary <- data.frame(combined_summary)
-####
-
-Kyle_Regression_Output[[1]] <- kyle_model_whole_period
-Kyle_Regression_Output[[2]] <- combined_summary
+Price_Impact_Regressions[[1]] <- price_impact_whole_period
+Price_Impact_Regressions[[2]] <- price_impact_whole_period_SE_adjusted
 
 #==== 02d - Kyle-Regression for the subperiods ================================#
 ## Period 1: 13:00:00 to 14:25:00
@@ -258,61 +222,27 @@ regression_data_filtered <- regression_data %>%
 #  delta_p ~ d_t + q_t + delta_d_t, 
 #  data = regression_data_filtered)
 
-kyle_model_period_1 <- lm(
-  delta_p ~ d_t + q_t + lag_q_t + delta_d_t,  # <-- Added lag_q_t
-  data = regression_data_filtered
-)
+price_impact_first_period <- PriceImpactRegression(data = regression_data_filtered,
+                                                   NeweyWest = FALSE)
+price_impact_first_period_SE_adjusted <- PriceImpactRegression(data = regression_data_filtered,
+                                                               NeweyWest = TRUE)
 
-nw_vcov <- NeweyWest(kyle_model_period_1, lag = lag_NW, prewhite = FALSE, adjust = TRUE)
-coefs <- coeftest(kyle_model_period_1, vcov. = nw_vcov)
-tidy_results <- broom::tidy(coefs)
+Price_Impact_Regressions[[3]] <- price_impact_first_period
+Price_Impact_Regressions[[4]] <- price_impact_first_period_SE_adjusted
 
-alpha <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(estimate)
-t_stat <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(statistic)
-model_stats <- broom::glance(kyle_model_period_1) %>%
-  dplyr::rename(
-    f.statistic = statistic, 
-    f.p.value = p.value
-  )
-
-combined_summary <- tidyr::crossing(tidy_results, model_stats)
-combined_summary <- data.frame(combined_summary)
-
-Kyle_Regression_Output[[3]] <- kyle_model_period_1
-Kyle_Regression_Output[[4]] <- combined_summary
 
 ## Period 2: 14:25:00 to 16:00:00
 
 regression_data_filtered <- regression_data %>%
   filter(format(datetime, "%H:%M:%S") >= "14:25:00")
 
-#kyle_model_period_2 <- lm(
-#  delta_p ~ d_t + q_t + delta_d_t, 
-#  data = regression_data_filtered
-#)
+price_impact_second_period <- PriceImpactRegression(data = regression_data_filtered,
+                                                   NeweyWest = FALSE)
+price_impact_second_period_SE_adjusted <- PriceImpactRegression(data = regression_data_filtered,
+                                                               NeweyWest = TRUE)
 
-kyle_model_period_2 <- lm(
-  delta_p ~ d_t + q_t + lag_q_t + delta_d_t,  # <-- Added lag_q_t
-  data = regression_data_filtered
-)
-
-nw_vcov <- NeweyWest(kyle_model_period_2, lag = lag_NW, prewhite = FALSE, adjust = TRUE)
-coefs <- coeftest(kyle_model_period_2, vcov. = nw_vcov)
-tidy_results <- broom::tidy(coefs)
-
-alpha <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(estimate)
-t_stat <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(statistic)
-model_stats <- broom::glance(kyle_model_period_2) %>%
-  dplyr::rename(
-    f.statistic = statistic, 
-    f.p.value = p.value
-  )
-
-combined_summary <- tidyr::crossing(tidy_results, model_stats)
-combined_summary <- data.frame(combined_summary)
-
-Kyle_Regression_Output[[5]] <- kyle_model_period_2
-Kyle_Regression_Output[[6]] <- combined_summary
+Price_Impact_Regressions[[5]] <- price_impact_second_period
+Price_Impact_Regressions[[6]] <- price_impact_second_period_SE_adjusted
 
 #==== 02e - Kyle-Regression for the constrained (short) subperiods ============#
 ## Run the rolling regression for the short subperiods.
@@ -378,10 +308,10 @@ ggsave(
 
 #==== 02f - Output & Returning ================================================#
 
-names(Kyle_Regression_Output) <- c("Full period", "Full Period (NW)",
+names(Price_Impact_Regressions) <- c("Full period", "Full Period (NW)",
                                    "Subperiod 1", "Subperiod 1 (NW)",
                                    "Subperiod 2", "Subperiod 2 (NW)")
-Kyle_Regression_Output_All[[file]] <- Kyle_Regression_Output
+Price_Impact_Regressions_All[[file]] <- Price_Impact_Regressions
 
 Lambda_results_Output[[file]] <- lambda_results
 
@@ -392,7 +322,7 @@ Lambda_results_Output[[file]] <- lambda_results
 
 ##
 
-names(Kyle_Regression_Output_All) <- FOMC_Dates
+names(Price_Impact_Regressions_All) <- FOMC_Dates
 names(Lambda_results_Output) <- FOMC_Dates
 
 #==============================================================================#
@@ -478,44 +408,14 @@ matching_files <- grep(pattern = Date_used,
       drop_na(delta_p, delta_d_t, lag_q_t)
     
 #==== 03c - Kyle-Regression for the whole time period =========================#
-    # The formula is:
-    # delta_p ~ d_t + q_t + delta_d_t
-    #
-    # Where:
-    # - 'delta_p' is the change in the midquote (your dependent variable)
-    # - 'd_t' estimates λ₀ (fixed impact of direction)
-    # - 'q_t' estimates λ₁ (Kyle's Lambda, the impact of signed size)
-    # - 'delta_d_t' estimates γ (the transient, non-info cost component)
-    # New - 'lag_q_t' to include Inventory Risk 
-    ## From 13:00:00 to 16:00:00
     
-    #kyle_model_whole_period <- lm(
-    #  delta_p ~ d_t + q_t + delta_d_t, 
-    #  data = regression_data)
+    price_impact_whole_period <- PriceImpactRegression(data = regression_data,
+                                                       NeweyWest = FALSE)
+    price_impact_whole_period_SE_adjusted <- PriceImpactRegression(data = regression_data,
+                                                                   NeweyWest = TRUE)
     
-    kyle_model_whole_period <- lm(
-      delta_p ~ d_t + q_t + lag_q_t + delta_d_t, 
-      data = regression_data
-    )
-    
-nw_vcov <- NeweyWest(kyle_model_whole_period, lag = lag_NW, prewhite = FALSE, adjust = TRUE)
-coefs <- coeftest(kyle_model_whole_period, vcov. = nw_vcov)
-tidy_results <- broom::tidy(coefs)
-
-alpha <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(estimate)
-t_stat <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(statistic)
-model_stats <- broom::glance(kyle_model_whole_period) %>%
-  dplyr::rename(
-    f.statistic = statistic, 
-    f.p.value = p.value
-  )
-
-combined_summary <- tidyr::crossing(tidy_results, model_stats)
-combined_summary <- data.frame(combined_summary)
-####
-
-Kyle_Regression_Output[[1]] <- kyle_model_whole_period
-Kyle_Regression_Output[[2]] <- combined_summary
+    Price_Impact_Regressions[[1]] <- price_impact_whole_period
+    Price_Impact_Regressions[[2]] <- price_impact_whole_period_SE_adjusted
     
 #==== 03d - Kyle-Regression for the subperiods ================================#
 ## Period 1: 13:00:00 to 14:25:00
@@ -523,66 +423,26 @@ Kyle_Regression_Output[[2]] <- combined_summary
 regression_data_filtered <- regression_data %>%
       filter(format(datetime, "%H:%M:%S") < "14:25:00")
     
-#kyle_model_period_1 <- lm(
-#      delta_p ~ d_t + q_t + delta_d_t, 
-#      data = regression_data_filtered
-#)
+price_impact_first_period <- PriceImpactRegression(data = regression_data_filtered,
+                                                   NeweyWest = FALSE)
+price_impact_first_period_SE_adjusted <- PriceImpactRegression(data = regression_data_filtered,
+                                                               NeweyWest = TRUE)
 
-kyle_model_period_1 <- lm(
-  delta_p ~ d_t + q_t + lag_q_t + delta_d_t,  # <-- Added lag_q_t
-  data = regression_data_filtered
-)
-    
-    nw_vcov <- NeweyWest(kyle_model_period_1, lag = lag_NW, prewhite = FALSE, adjust = TRUE)
-    coefs <- coeftest(kyle_model_period_1, vcov. = nw_vcov)
-    tidy_results <- broom::tidy(coefs)
-    
-    alpha <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(estimate)
-    t_stat <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(statistic)
-    model_stats <- broom::glance(kyle_model_period_1) %>%
-      dplyr::rename(
-        f.statistic = statistic, 
-        f.p.value = p.value
-      )
-    
-    combined_summary <- tidyr::crossing(tidy_results, model_stats)
-    combined_summary <- data.frame(combined_summary)
-    
-    Kyle_Regression_Output[[3]] <- kyle_model_period_1
-    Kyle_Regression_Output[[4]] <- combined_summary
+Price_Impact_Regressions[[3]] <- price_impact_first_period
+Price_Impact_Regressions[[4]] <- price_impact_first_period_SE_adjusted
     
 ## Period 2: 14:25:00 to 16:00:00
     
     regression_data_filtered <- regression_data %>%
       filter(format(datetime, "%H:%M:%S") >= "14:25:00")
     
-    #kyle_model_period_2 <- lm(
-    #  delta_p ~ d_t + q_t + delta_d_t, 
-    #  data = regression_data_filtered
-    #)
+    price_impact_second_period <- PriceImpactRegression(data = regression_data_filtered,
+                                                       NeweyWest = FALSE)
+    price_impact_second_period_SE_adjusted <- PriceImpactRegression(data = regression_data_filtered,
+                                                                   NeweyWest = TRUE)
     
-    kyle_model_period_2 <- lm(
-      delta_p ~ d_t + q_t + lag_q_t + delta_d_t,  # <-- Added lag_q_t
-      data = regression_data_filtered
-    )
-    
-    nw_vcov <- NeweyWest(kyle_model_period_2, lag = lag_NW, prewhite = FALSE, adjust = TRUE)
-    coefs <- coeftest(kyle_model_period_2, vcov. = nw_vcov)
-    tidy_results <- broom::tidy(coefs)
-    
-    alpha <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(estimate)
-    t_stat <- tidy_results %>% dplyr::filter(term == "(Intercept)") %>% pull(statistic)
-    model_stats <- broom::glance(kyle_model_period_2) %>%
-      dplyr::rename(
-        f.statistic = statistic, 
-        f.p.value = p.value
-      )
-    
-    combined_summary <- tidyr::crossing(tidy_results, model_stats)
-    combined_summary <- data.frame(combined_summary)
-    
-    Kyle_Regression_Output[[5]] <- kyle_model_period_2
-    Kyle_Regression_Output[[6]] <- combined_summary
+    Price_Impact_Regressions[[5]] <- price_impact_second_period
+    Price_Impact_Regressions[[6]] <- price_impact_second_period_SE_adjusted
     
 #==== 03e - Kyle-Regression for the constrained (short) subperiods ============#
 ## Run the rolling regression for the short subperiods.
@@ -648,11 +508,11 @@ tryCatch({
     
 #==== 03f - Output & Returning ================================================#
     
-names(Kyle_Regression_Output) <- c("Full period", "Full Period (NW)",
+names(Price_Impact_Regressions) <- c("Full period", "Full Period (NW)",
                                    "Subperiod 1", "Subperiod 1 (NW)",
                                    "Subperiod 2", "Subperiod 2 (NW)")
 
-Kyle_Regression_Output_Controls_All[[file]] <- Kyle_Regression_Output
+Price_Impact_Regressions_Controls_All[[file]] <- Price_Impact_Regressions
     
 Lambda_results_Controls_Output[[file]] <- lambda_results
     
@@ -663,7 +523,7 @@ Lambda_results_Controls_Output[[file]] <- lambda_results
 
 ##
 
-names(Kyle_Regression_Output_Controls_All) <- Controls_Dates
+names(Price_Impact_Regressions_Controls_All) <- Controls_Dates
 names(Lambda_results_Controls_Output) <- Controls_Dates
 
 ## Save all the output to an .RDA file.
