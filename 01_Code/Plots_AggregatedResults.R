@@ -25,7 +25,7 @@ packages <- c("dplyr", "tidyr", "lubridate",
               "purrr", "ggrepel",
               "hms",
               "stargazer",
-              "sandwich", "lmtest"
+              "sandwich", "lmtest", "ggrepel"
               )
 
 for(i in 1:length(packages)){
@@ -136,14 +136,14 @@ load(Data_Input_Directory)
 tryCatch({
   
   fomc_results <- map_dfr(
-    Kyle_Regression_Output_All, 
+    Price_Impact_Regressions_All, 
     ~ .x[["Full Period (NW)"]], 
     .id = "Date"
   ) %>% 
     mutate(Event_Type = "FOMC")
   
   control_results <- map_dfr(
-    Kyle_Regression_Output_Controls_All,
+    Price_Impact_Regressions_Controls_All,
     ~ .x[["Full Period (NW)"]], 
     .id = "Date"
   ) %>% 
@@ -154,55 +154,123 @@ tryCatch({
     mutate(Date = as.Date(Date))
   all_results_full <- all_results
   
-  paired_data <- lambda_results %>%
-    arrange(Event_Type, Date) %>% 
-    group_by(Event_Type) %>%
-    mutate(pair_id = row_number()) %>%
-    ungroup() %>%
-    select(pair_id, Event_Type, Date, estimate) %>%
-    pivot_wider(
-      names_from = Event_Type,
-      values_from = c(estimate, Date)
+  # paired_data <- lambda_results %>%
+  #   arrange(Event_Type, Date) %>% 
+  #   group_by(Event_Type) %>%
+  #   mutate(pair_id = row_number()) %>%
+  #   ungroup() %>%
+  #   select(pair_id, Event_Type, Date, estimate) %>%
+  #   pivot_wider(
+  #     names_from = Event_Type,
+  #     values_from = c(estimate, Date)
+  #   )
+  
+## =========================== ##
+## Visualisation
+## =========================== ##
+  
+  all_outliers <- c("2025-09-29", "2025-10-29")
+  crash_date   <- "2025-10-29"
+  
+  clean_data <- all_results_full %>%
+    filter(term != "(Intercept)") %>%
+    mutate(
+      Event_Type = factor(Event_Type, levels = c("Control", "FOMC")),
+      is_significant = if_else(p.value < 0.05, "Significant", "Insignificant"),
+      term_math = case_when(
+        term == "Lambda"    ~ "lambda",
+        term == "Beta"      ~ "beta",
+        term == "delta_d_t" ~ "gamma",
+        term == "q_t"       ~ "lambda + beta", # Assuming this is what you meant by "lambda+gamma"
+        term == "lag_q_t"   ~ "-lambda * phi",
+        TRUE                ~ term
+      ),
+      label_text = case_when(
+        term_math %in% c("gamma", "lambda + beta") & as.character(Date) == crash_date ~ as.character(Date),
+                !term_math %in% c("gamma", "lambda + beta") & as.character(Date) %in% all_outliers ~ as.character(Date),
+        TRUE ~ NA_character_
+      )
     )
   
-  ## =========================== ##
-  ## Visualisation
-  ## =========================== ##
-  
-  Plot <- ggplot(all_results %>% filter(term != "(Intercept)"), 
-                 aes(x = estimate, y = Date)) +
-    geom_point(aes(color = Event_Type), size = 2) +
-    geom_errorbarh(aes(
-      xmin = estimate - 1.96 * std.error,
-      xmax = estimate + 1.96 * std.error,
-      color = Event_Type
-    ), height = 0) +
-    geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
-    facet_grid(
-      Event_Type ~ term, 
-      scales = "free_x"
-    ) + 
-    scale_color_manual(values = c("FOMC" = "red", "Control" = "grey")) +
+  plot <- ggplot(clean_data, aes(x = Event_Type, y = estimate, fill = Event_Type)) +
+    geom_boxplot(alpha = 0.6, outlier.shape = NA) +
+        geom_jitter(aes(color = is_significant), width = 0.2, size = 1.5, alpha = 0.6) + 
+        geom_text_repel(
+      aes(label = label_text),
+      size = 3,
+      box.padding = 0.5,
+      max.overlaps = Inf,
+      min.segment.length = 0,
+      color = "black"
+    ) +
+    
+    facet_wrap(~ term_math, scales = "free", ncol = 3, labeller = label_parsed) +
+    
+    scale_fill_manual(values = c("Control" = "grey", "FOMC" = "red")) +
+    scale_color_manual(values = c("Significant" = "orange", "Insignificant" = "black")) +
+    
     labs(
       title = "",
-      subtitle = "Lines are 95% C.I. using Newey-West SE",
-      x = "Coefficient Estimate",
-      y = "Date"
+      subtitle = "",
+      y = "Estimate",
+      x = ""
     ) +
-    theme_bw() + # `theme_bw` often works better for facets
-    theme(legend.position = "none",
-          axis.text.y = element_text(size = 8)) # Smaller text for dates
-
-Path <- file.path(Charts_Aggregate_Directory, "1a_CoefficientEstimates_Fullperiod.png")
-ggsave(
-  filename = Path,
-  plot = Plot,
-  width = height,
-  height = width,
-  units = "px",
-  dpi = 300,
-  limitsize = FALSE
-)
+    theme_bw() +
+    theme(
+      legend.position = "none",
+      strip.text = element_text(size = 12, face = "bold")
+    )
+  
+  Path <- file.path(Charts_Aggregate_Directory, "10a_CoefficientEstimates_Fullperiod_Boxplot.png")
+  ggsave(
+    filename = Path,
+    plot = plot,
+    width = height,
+    height = width,
+    units = "px",
+    dpi = 300,
+    limitsize = FALSE
+  )
+  
+  
+## =========================== ##
+## Visualisation Boxplot.
+## =========================== ##
+  
+#   Plot <- ggplot(all_results %>% filter(term != "(Intercept)"), 
+#                  aes(x = estimate, y = Date)) +
+#     geom_point(aes(color = Event_Type), size = 2) +
+#     geom_errorbarh(aes(
+#       xmin = estimate - 1.96 * std.error,
+#       xmax = estimate + 1.96 * std.error,
+#       color = Event_Type
+#     ), height = 0) +
+#     geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+#     facet_grid(
+#       Event_Type ~ term, 
+#       scales = "free_x"
+#     ) + 
+#     scale_color_manual(values = c("FOMC" = "red", "Control" = "grey")) +
+#     labs(
+#       title = "",
+#       subtitle = "Lines are 95% C.I. using Newey-West SE",
+#       x = "Coefficient Estimate",
+#       y = "Date"
+#     ) +
+#     theme_bw() + # `theme_bw` often works better for facets
+#     theme(legend.position = "none",
+#           axis.text.y = element_text(size = 8)) # Smaller text for dates
+# 
+# Path <- file.path(Charts_Aggregate_Directory, "1a_CoefficientEstimates_Fullperiod.png")
+# ggsave(
+#   filename = Path,
+#   plot = Plot,
+#   width = height,
+#   height = width,
+#   units = "px",
+#   dpi = 300,
+#   limitsize = FALSE
+# )
 
 }, silent = TRUE)
 
@@ -211,14 +279,14 @@ ggsave(
 tryCatch({
   
 fomc_results <- map_dfr(
-  Kyle_Regression_Output_All, 
+  Price_Impact_Regressions_All, 
   ~ .x[["Subperiod 1 (NW)"]], 
   .id = "Date"
 ) %>% 
   mutate(Event_Type = "FOMC")
 
 control_results <- map_dfr(
-  Kyle_Regression_Output_Controls_All,
+  Price_Impact_Regressions_Controls_All,
   ~ .x[["Subperiod 1 (NW)"]], 
   .id = "Date"
 ) %>% 
@@ -229,55 +297,139 @@ all_results <- all_results %>%
   mutate(Date = as.Date(Date))
 all_results_sub1 <- all_results
 
-paired_data <- lambda_results %>%
-  arrange(Event_Type, Date) %>% 
-  group_by(Event_Type) %>%
-  mutate(pair_id = row_number()) %>%
-  ungroup() %>%
-  select(pair_id, Event_Type, Date, estimate) %>%
-  pivot_wider(
-    names_from = Event_Type,
-    values_from = c(estimate, Date)
-  )
+# paired_data <- lambda_results %>%
+#   arrange(Event_Type, Date) %>% 
+#   group_by(Event_Type) %>%
+#   mutate(pair_id = row_number()) %>%
+#   ungroup() %>%
+#   select(pair_id, Event_Type, Date, estimate) %>%
+#   pivot_wider(
+#     names_from = Event_Type,
+#     values_from = c(estimate, Date)
+#   )
 
 ## =========================== ##
 ## Visualisation
 ## =========================== ##
 
-Plot <- ggplot(all_results %>% filter(term != "(Intercept)"), 
-       aes(x = estimate, y = Date)) +
-  geom_point(aes(color = Event_Type), size = 2) +
-  geom_errorbarh(aes(
-    xmin = estimate - 1.96 * std.error,
-    xmax = estimate + 1.96 * std.error,
-    color = Event_Type
-  ), height = 0) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
-  facet_grid(
-    Event_Type ~ term, 
-    scales = "free_x"
-  ) + 
-  scale_color_manual(values = c("FOMC" = "red", "Control" = "grey")) +
+all_outliers    <- c("2025-09-29", "2025-10-29") # FOMC outliers
+crash_date      <- "2025-10-29"                  # FOMC crash day
+control_outlier <- "2025-02-04"                  # The specific Control outlier
+
+clean_data <- all_results_sub1 %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    Event_Type = factor(Event_Type, levels = c("Control", "FOMC")),
+    
+    # 1. Significance Flag
+    is_significant = if_else(p.value < 0.05, "Significant", "Insignificant"),
+    
+    # 2. Math Terms
+    term_math = case_when(
+      term == "Lambda"    ~ "lambda",
+      term == "Beta"      ~ "beta",
+      term == "delta_d_t" ~ "gamma",
+      term == "q_t"       ~ "lambda + beta", 
+      term == "lag_q_t"   ~ "-lambda * phi",
+      TRUE                ~ term
+    ),
+    
+    # 3. Refined Label Logic
+    label_text = case_when(
+      # Case A: Gamma (Only the crash date)
+      term_math == "gamma" & as.character(Date) == crash_date ~ as.character(Date),
+      
+      # Case B: Lambda + Beta (Crash date AND the specific Control outlier)
+      term_math == "lambda + beta" & as.character(Date) %in% c(crash_date, control_outlier) ~ as.character(Date),
+      
+      # Case C: Lambda and Lag Q (Both FOMC outliers AND the specific Control outlier)
+      term_math %in% c("lambda", "-lambda * phi") & as.character(Date) %in% c(all_outliers, control_outlier) ~ as.character(Date),
+      
+      # Case D: Everything else (i.e., Beta) - Mark both FOMC outliers
+      as.character(Date) %in% all_outliers ~ as.character(Date),
+      
+      # Default: No label
+      TRUE ~ NA_character_
+    )
+  )
+
+plot <- ggplot(clean_data, aes(x = Event_Type, y = estimate, fill = Event_Type)) +
+  geom_boxplot(alpha = 0.6, outlier.shape = NA) +
+    geom_jitter(aes(color = is_significant), width = 0.2, size = 1.5, alpha = 0.6) + 
+    geom_text_repel(
+    aes(label = label_text),
+    size = 3,
+    box.padding = 0.5,
+    max.overlaps = Inf,
+    min.segment.length = 0,
+    color = "black"
+  ) +
+  
+  facet_wrap(~ term_math, scales = "free", ncol = 3, labeller = label_parsed) +
+  scale_fill_manual(values = c("Control" = "grey", "FOMC" = "red")) +
+  scale_color_manual(values = c("Significant" = "orange", "Insignificant" = "black")) +
+  
   labs(
     title = "",
-    subtitle = "Lines are 95% C.I. using Newey-West SE",
-    x = "Coefficient Estimate",
-    y = "Date"
+    subtitle = "",
+    y = "Estimate",
+    x = ""
   ) +
-  theme_bw() + # `theme_bw` often works better for facets
-  theme(legend.position = "none",
-        axis.text.y = element_text(size = 8)) # Smaller text for dates
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(size = 12, face = "bold")
+  )
 
-Path <- file.path(Charts_Aggregate_Directory, "1b_CoefficientEstimates_SUbperiod1.png")
+Path <- file.path(Charts_Aggregate_Directory, "10b_CoefficientEstimates_Period1_Boxplot.png")
 ggsave(
   filename = Path,
-  plot = Plot,
+  plot = plot,
   width = height,
   height = width,
   units = "px",
   dpi = 300,
   limitsize = FALSE
 )
+
+## =========================== ##
+## Visualisation
+## =========================== ##
+
+# Plot <- ggplot(all_results %>% filter(term != "(Intercept)"), 
+#        aes(x = estimate, y = Date)) +
+#   geom_point(aes(color = Event_Type), size = 2) +
+#   geom_errorbarh(aes(
+#     xmin = estimate - 1.96 * std.error,
+#     xmax = estimate + 1.96 * std.error,
+#     color = Event_Type
+#   ), height = 0) +
+#   geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+#   facet_grid(
+#     Event_Type ~ term, 
+#     scales = "free_x"
+#   ) + 
+#   scale_color_manual(values = c("FOMC" = "red", "Control" = "grey")) +
+#   labs(
+#     title = "",
+#     subtitle = "Lines are 95% C.I. using Newey-West SE",
+#     x = "Coefficient Estimate",
+#     y = "Date"
+#   ) +
+#   theme_bw() + # `theme_bw` often works better for facets
+#   theme(legend.position = "none",
+#         axis.text.y = element_text(size = 8)) # Smaller text for dates
+# 
+# Path <- file.path(Charts_Aggregate_Directory, "1b_CoefficientEstimates_SUbperiod1.png")
+# ggsave(
+#   filename = Path,
+#   plot = Plot,
+#   width = height,
+#   height = width,
+#   units = "px",
+#   dpi = 300,
+#   limitsize = FALSE
+# )
 
 }, silent = TRUE)
 
@@ -286,14 +438,14 @@ ggsave(
 tryCatch({
   
   fomc_results <- map_dfr(
-    Kyle_Regression_Output_All, 
+    Price_Impact_Regressions_All, 
     ~ .x[["Subperiod 2 (NW)"]], 
     .id = "Date"
   ) %>% 
     mutate(Event_Type = "FOMC")
   
   control_results <- map_dfr(
-    Kyle_Regression_Output_Controls_All,
+    Price_Impact_Regressions_Controls_All,
     ~ .x[["Subperiod 2 (NW)"]], 
     .id = "Date"
   ) %>% 
@@ -304,55 +456,127 @@ tryCatch({
     mutate(Date = as.Date(Date))
   all_results_sub2 <- all_results
   
-  paired_data <- lambda_results %>%
-    arrange(Event_Type, Date) %>% 
-    group_by(Event_Type) %>%
-    mutate(pair_id = row_number()) %>%
-    ungroup() %>%
-    select(pair_id, Event_Type, Date, estimate) %>%
-    pivot_wider(
-      names_from = Event_Type,
-      values_from = c(estimate, Date)
-    )
+  # paired_data <- lambda_results %>%
+  #   arrange(Event_Type, Date) %>% 
+  #   group_by(Event_Type) %>%
+  #   mutate(pair_id = row_number()) %>%
+  #   ungroup() %>%
+  #   select(pair_id, Event_Type, Date, estimate) %>%
+  #   pivot_wider(
+  #     names_from = Event_Type,
+  #     values_from = c(estimate, Date)
+  #   )
+  # 
   
   ## =========================== ##
   ## Visualisation
   ## =========================== ##
   
-Plot <- ggplot(all_results %>% filter(term != "(Intercept)"), 
-         aes(x = estimate, y = Date)) +
-    geom_point(aes(color = Event_Type), size = 2) +
-    geom_errorbarh(aes(
-      xmin = estimate - 1.96 * std.error,
-      xmax = estimate + 1.96 * std.error,
-      color = Event_Type
-    ), height = 0) +
-    geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
-    facet_grid(
-      Event_Type ~ term, 
-      scales = "free_x"
-    ) + 
-    scale_color_manual(values = c("FOMC" = "red", "Control" = "grey")) +
+  all_outliers    <- c("2025-09-29", "2025-10-29") 
+  crash_date      <- "2025-10-29"
+  control_outlier <- ""
+  
+  clean_data <- all_results_sub2 %>%
+    filter(term != "(Intercept)") %>%
+    mutate(
+      Event_Type = factor(Event_Type, levels = c("Control", "FOMC")),
+      is_significant = if_else(p.value < 0.05, "Significant", "Insignificant"),
+      term_math = case_when(
+        term == "Lambda"    ~ "lambda",
+        term == "Beta"      ~ "beta",
+        term == "delta_d_t" ~ "gamma",
+        term == "q_t"       ~ "lambda + beta", 
+        term == "lag_q_t"   ~ "-lambda * phi",
+        TRUE                ~ term
+      ),
+      label_text = case_when(
+        term_math == "gamma" & as.character(Date) == crash_date ~ as.character(Date),
+        term_math == "lambda + beta" & as.character(Date) %in% c(crash_date, control_outlier) ~ as.character(Date),
+          term_math %in% c("lambda", "-lambda * phi") & as.character(Date) %in% c(all_outliers, control_outlier) ~ as.character(Date),
+          as.character(Date) %in% all_outliers & term_math == "beta" ~ as.character(Date),
+        
+        TRUE ~ NA_character_
+      )
+    )
+  
+  plot <- ggplot(clean_data, aes(x = Event_Type, y = estimate, fill = Event_Type)) +
+    geom_boxplot(alpha = 0.6, outlier.shape = NA) +
+    
+    geom_jitter(aes(color = is_significant), width = 0.2, size = 1.5, alpha = 0.6) + 
+    
+    geom_text_repel(
+      aes(label = label_text),
+      size = 3,
+      box.padding = 0.5,
+      max.overlaps = Inf,
+      min.segment.length = 0,
+      color = "black"
+    ) +
+    
+    facet_wrap(~ term_math, scales = "free", ncol = 3, labeller = label_parsed) +
+    scale_fill_manual(values = c("Control" = "grey", "FOMC" = "red")) +
+    scale_color_manual(values = c("Significant" = "orange", "Insignificant" = "black")) +
     labs(
       title = "",
-      subtitle = "Lines are 95% C.I. using Newey-West SE",
-      x = "Coefficient Estimate",
-      y = "Date"
+      subtitle = "",
+      y = "Estimate",
+      x = ""
     ) +
-    theme_bw() + # `theme_bw` often works better for facets
-    theme(legend.position = "none",
-          axis.text.y = element_text(size = 8)) # Smaller text for dates
+    theme_bw() +
+    theme(
+      legend.position = "none",
+      strip.text = element_text(size = 12, face = "bold")
+    )
+
+  Path <- file.path(Charts_Aggregate_Directory, "10c_CoefficientEstimates_Period2_Boxplot.png")
+  ggsave(
+    filename = Path,
+    plot = plot,
+    width = height,
+    height = width,
+    units = "px",
+    dpi = 300,
+    limitsize = FALSE
+  )
   
-Path <- file.path(Charts_Aggregate_Directory, "1c_CoefficientEstimates_SUbperiod2.png")
-ggsave(
-  filename = Path,
-  plot = Plot,
-  width = height,
-  height = width,
-  units = "px",
-  dpi = 300,
-  limitsize = FALSE
-)
+  ## =========================== ##
+  ## Visualisation
+  ## =========================== ##
+  
+# Plot <- ggplot(all_results %>% filter(term != "(Intercept)"), 
+#          aes(x = estimate, y = Date)) +
+#     geom_point(aes(color = Event_Type), size = 2) +
+#     geom_errorbarh(aes(
+#       xmin = estimate - 1.96 * std.error,
+#       xmax = estimate + 1.96 * std.error,
+#       color = Event_Type
+#     ), height = 0) +
+#     geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+#     facet_grid(
+#       Event_Type ~ term, 
+#       scales = "free_x"
+#     ) + 
+#     scale_color_manual(values = c("FOMC" = "red", "Control" = "grey")) +
+#     labs(
+#       title = "",
+#       subtitle = "Lines are 95% C.I. using Newey-West SE",
+#       x = "Coefficient Estimate",
+#       y = "Date"
+#     ) +
+#     theme_bw() + # `theme_bw` often works better for facets
+#     theme(legend.position = "none",
+#           axis.text.y = element_text(size = 8)) # Smaller text for dates
+#   
+# Path <- file.path(Charts_Aggregate_Directory, "1c_CoefficientEstimates_SUbperiod2.png")
+# ggsave(
+#   filename = Path,
+#   plot = Plot,
+#   width = height,
+#   height = width,
+#   units = "px",
+#   dpi = 300,
+#   limitsize = FALSE
+# )
 
 }, silent = TRUE)
 
