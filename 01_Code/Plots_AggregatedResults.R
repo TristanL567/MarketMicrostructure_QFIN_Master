@@ -24,7 +24,7 @@ packages <- c("dplyr", "tidyr", "lubridate",
               "here",
               "purrr", "ggrepel",
               "hms",
-              "stargazer",
+              "stargazer", "broom",
               "sandwich", "lmtest", "ggrepel"
               )
 
@@ -166,7 +166,7 @@ tryCatch({
   #   )
   
 ## =========================== ##
-## Visualisation
+## Visualisation of all the events.
 ## =========================== ##
   
   all_outliers <- c("2025-09-29", "2025-10-29")
@@ -231,6 +231,37 @@ tryCatch({
     dpi = 300,
     limitsize = FALSE
   )
+  
+## =========================== ##
+## Visualisation of the aggregated coefficient estimates.
+## =========================== ##
+clean_data <- all_results_full %>%
+    filter(term != "(Intercept)") %>%
+    mutate(
+      Event_Type = factor(Event_Type, levels = c("Control", "FOMC")),
+      is_significant = if_else(p.value < 0.05, "Significant", "Insignificant"),
+      term_math = case_when(
+        term == "Lambda"    ~ "lambda",
+        term == "Beta"      ~ "beta",
+        term == "delta_d_t" ~ "gamma",
+        term == "q_t"       ~ "lambda + beta", # Assuming this is what you meant by "lambda+gamma"
+        term == "lag_q_t"   ~ "-lambda * phi",
+        TRUE                ~ term
+      )
+  )
+
+summary_stats <- clean_data %>%
+  group_by(term_math, Event_Type) %>%
+  summarise(
+    Mean = mean(estimate, na.rm = TRUE),
+    Median = median(estimate, na.rm = TRUE),
+    SD = sd(estimate, na.rm = TRUE),
+    Count = n(),
+    .groups = 'drop'
+  )
+
+unique_terms <- unique(clean_data$term_math)
+t_test_results <- map_dfr(unique_terms, ~Welch_t_test(clean_data, .x))
   
   
 ## =========================== ##
@@ -741,78 +772,78 @@ data_combined_abs <- data.frame(data_combined_abs)
 ## =========================== ##
 
 ## Simple Average.
-tryCatch({
-  
-  lambda_results <- data_combined %>%
-    mutate(significant = ifelse(p.value < 0.05, "Yes", "No"))
-  
-  Plot <- ggplot(lambda_results, aes(x = window_start, y = estimate * shares_in_10k_trade)) +
-    geom_line() +
-    geom_point(aes(color = significant)) +
-    scale_color_manual(
-      values = c("Yes" = "red", "No" = "grey"),
-      name = "Significant (p < 0.05)" # Added a clearer legend title
-    ) +
-    labs(
-      title = "",
-      y = "Coefficient size (Absolute Value)",
-      x = "Time"
-    ) +
-    theme_minimal() +  # Using your requested theme
-    theme(
-      axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1) # Using your requested axis text rotation
-    )
-  
-  Path <- file.path(Charts_Aggregate_Directory, "FOMC_Aggregate_Coefficient_Size.png")
-  ggsave(
-    filename = Path,
-    plot = Plot,
-    width = height,
-    height = width,
-    units = "px",
-    dpi = 300,
-    limitsize = FALSE
-  )
-  
-}, silent = TRUE)
+# tryCatch({
+#   
+#   lambda_results <- data_combined %>%
+#     mutate(significant = ifelse(p.value < 0.05, "Yes", "No"))
+#   
+#   Plot <- ggplot(lambda_results, aes(x = window_start, y = estimate * shares_in_10k_trade)) +
+#     geom_line() +
+#     geom_point(aes(color = significant)) +
+#     scale_color_manual(
+#       values = c("Yes" = "red", "No" = "grey"),
+#       name = "Significant (p < 0.05)" # Added a clearer legend title
+#     ) +
+#     labs(
+#       title = "",
+#       y = "Coefficient size (Absolute Value)",
+#       x = "Time"
+#     ) +
+#     theme_minimal() +  # Using your requested theme
+#     theme(
+#       axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1) # Using your requested axis text rotation
+#     )
+#   
+#   Path <- file.path(Charts_Aggregate_Directory, "FOMC_Aggregate_Coefficient_Size.png")
+#   ggsave(
+#     filename = Path,
+#     plot = Plot,
+#     width = height,
+#     height = width,
+#     units = "px",
+#     dpi = 300,
+#     limitsize = FALSE
+#   )
+#   
+# }, silent = TRUE)
 
 ## Absolute Value.
 
-tryCatch({
-  
-lambda_results <- data_combined_abs %>%
-  mutate(significant = ifelse(p.value < 0.05, "Yes", "No"))
-
-Plot <- ggplot(lambda_results, aes(x = window_start, y = estimate * shares_in_10k_trade)) +
-  geom_line() +
-  geom_point(aes(color = significant)) +
-  scale_x_datetime(labels = scales::date_format("%H:%M:%S")) +
-  scale_color_manual(
-    values = c("Yes" = "red", "No" = "grey"),
-    name = "Significant (p < 0.05)" # Added a clearer legend title
-  ) +
-  labs(
-    title = "",
-    y = "Coefficient size (Absolute Value)",
-    x = "Time"
-  ) +
-  theme_minimal() +  # Using your requested theme
-  theme(
-    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1) # Using your requested axis text rotation
-  )
-
-Path <- file.path(Charts_Aggregate_Directory, "FOMC_Aggregate_Coefficient_Size_abs.png")
-ggsave(
-  filename = Path,
-  plot = Plot,
-  width = height,
-  height = width,
-  units = "px",
-  dpi = 300,
-  limitsize = FALSE
-)
-
-}, silent = TRUE)
+# tryCatch({
+#   
+# lambda_results <- data_combined_abs %>%
+#   mutate(significant = ifelse(p.value < 0.05, "Yes", "No"))
+# 
+# Plot <- ggplot(lambda_results, aes(x = window_start, y = estimate * shares_in_10k_trade)) +
+#   geom_line() +
+#   geom_point(aes(color = significant)) +
+#   scale_x_datetime(labels = scales::date_format("%H:%M:%S")) +
+#   scale_color_manual(
+#     values = c("Yes" = "red", "No" = "grey"),
+#     name = "Significant (p < 0.05)" # Added a clearer legend title
+#   ) +
+#   labs(
+#     title = "",
+#     y = "Coefficient size (Absolute Value)",
+#     x = "Time"
+#   ) +
+#   theme_minimal() +  # Using your requested theme
+#   theme(
+#     axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1) # Using your requested axis text rotation
+#   )
+# 
+# Path <- file.path(Charts_Aggregate_Directory, "FOMC_Aggregate_Coefficient_Size_abs.png")
+# ggsave(
+#   filename = Path,
+#   plot = Plot,
+#   width = height,
+#   height = width,
+#   units = "px",
+#   dpi = 300,
+#   limitsize = FALSE
+# )
+# 
+# }, silent = TRUE)
 
 #==== 03a - Aggregate the effect (Controls) ===================================#
 
@@ -820,27 +851,27 @@ ggsave(
 ## Controls
 ## =========================== ##
 ## Coefficients.
-Dates <- do.call(cbind, lapply(Lambda_results_Output, function(x) x[, 1]))[,1]
-Dates <- as.POSIXct(Dates, format = "%Y-%m-%d %H:%M:%S")
-
-Coefficient_Estimate <- do.call(cbind, lapply(Lambda_results_Output, function(x) x[, 2]))
-colnames(Coefficient_Estimate) <- FOMC_Dates
-
-## Process the estimates.
-Coefficient_Estimate_abs <- abs(Coefficient_Estimate)
-Coefficient_Estimate_abs_aggregate <- rowMeans(Coefficient_Estimate_abs) ## Absolute value.
-Coefficient_Estimate_aggregate <- rowMeans(Coefficient_Estimate) ## Simple Average.
+# Dates <- do.call(cbind, lapply(Lambda_results_Output, function(x) x[, 1]))[,1]
+# Dates <- as.POSIXct(Dates, format = "%Y-%m-%d %H:%M:%S")
+# 
+# Coefficient_Estimate <- do.call(cbind, lapply(Lambda_results_Output, function(x) x[, 2]))
+# colnames(Coefficient_Estimate) <- FOMC_Dates
+# 
+# ## Process the estimates.
+# Coefficient_Estimate_abs <- abs(Coefficient_Estimate)
+# Coefficient_Estimate_abs_aggregate <- rowMeans(Coefficient_Estimate_abs) ## Absolute value.
+# Coefficient_Estimate_aggregate <- rowMeans(Coefficient_Estimate) ## Simple Average.
 
 #==============================================================================#
 #==== 04 - Visualisation ======================================================#
 #==============================================================================#
 
-date_variable <- 2
-output_stargazer <- list()
+# date_variable <- 2
+# output_stargazer <- list()
 
 #==== 04a - Regression Output (with stargazer) ================================#
 
-tryCatch({
+# tryCatch({
   
   date_selected <- FOMC_Dates[date_variable]
 reg_model <- Kyle_Regression_Output_All[[date_selected]]$`Full period`
@@ -880,7 +911,7 @@ Path <- file.path(Charts_Aggregate_Directory, "2a_Regression_Summary_FOMC_202503
 
 ## Control.
 
-tryCatch({
+# tryCatch({
   
   date_selected <- Controls_Dates[date_variable]
   reg_model <- Kyle_Regression_Output_Controls_All[[date_selected]]$`Full period`
@@ -920,7 +951,7 @@ tryCatch({
 
 #==== 04b - Regression Output (Subperiod 1) ===================================#
 
-tryCatch({
+# tryCatch({
   
   date_selected <- FOMC_Dates[date_variable]
   reg_model <- Kyle_Regression_Output_All[[date_selected]]$`Subperiod 1`
@@ -959,7 +990,7 @@ tryCatch({
 
 ## Control.
 
-tryCatch({
+# tryCatch({
   
   date_selected <- Controls_Dates[date_variable]
   reg_model <- Kyle_Regression_Output_Controls_All[[date_selected]]$`Subperiod 1`
@@ -999,7 +1030,7 @@ tryCatch({
 #==== 04c - Regression Output (Subperiod 2) ===================================#
 
 
-tryCatch({
+# tryCatch({
   
   date_selected <- FOMC_Dates[date_variable]
   reg_model <- Kyle_Regression_Output_All[[date_selected]]$`Subperiod `
@@ -1038,7 +1069,7 @@ tryCatch({
 
 ## Control.
 
-tryCatch({
+# tryCatch({
   
   date_selected <- Controls_Dates[date_variable]
   reg_model <- Kyle_Regression_Output_Controls_All[[date_selected]]$`Subperiod 2`
@@ -1077,41 +1108,41 @@ tryCatch({
 
 #==== 04d - Regression Output (Combined) ======================================#
 
-Models_list <- lapply(output_stargazer, function(x) x[[1]])
-T_stat_list <- lapply(output_stargazer, function(x) x[[2]])
-p_val_list <- lapply(output_stargazer, function(x) x[[3]])
-
-Path <- file.path(Charts_Aggregate_Directory, "5a_Regression_Summary_20250327.html")
-
-stargazer(
-  Models_list,
-  type = "html",
-  out = Path,
-  se = list(T_stat_list[[1]], T_stat_list[[2]],
-            T_stat_list[[3]], T_stat_list[[4]],
-            T_stat_list[[5]], T_stat_list[[6]]),
-  t  = list(T_stat_list[[1]], T_stat_list[[2]],
-            T_stat_list[[3]], T_stat_list[[4]],
-            T_stat_list[[5]], T_stat_list[[6]]),
-  p  = list(p_val_list[[1]], p_val_list[[1]],
-            p_val_list[[3]], p_val_list[[4]],
-            p_val_list[[5]], p_val_list[[6]]),
-  title = "",
-  dep.var.labels = "Price Change",
-  column.labels = c("FOMC", 
-                    "Control",
-                    "FOMC (P.1)",
-                    "Control (P.1)",
-                    "FOMC (P.2)",
-                    "Control (P.2)"),
-  # covariate.labels = reg_labels,
-  header = FALSE,
-  notes.append = FALSE, # <-- ADDED: Prevents default "Standard errors..." note
-  align = TRUE,
-  digits = 8,
-  omit.stat = c("f", "adj.rsq", "ll"),
-  notes = paste0("Standard errors are Newey-West robust (lag=", lag_NW, ").")
-)
+# Models_list <- lapply(output_stargazer, function(x) x[[1]])
+# T_stat_list <- lapply(output_stargazer, function(x) x[[2]])
+# p_val_list <- lapply(output_stargazer, function(x) x[[3]])
+# 
+# Path <- file.path(Charts_Aggregate_Directory, "5a_Regression_Summary_20250327.html")
+# 
+# stargazer(
+#   Models_list,
+#   type = "html",
+#   out = Path,
+#   se = list(T_stat_list[[1]], T_stat_list[[2]],
+#             T_stat_list[[3]], T_stat_list[[4]],
+#             T_stat_list[[5]], T_stat_list[[6]]),
+#   t  = list(T_stat_list[[1]], T_stat_list[[2]],
+#             T_stat_list[[3]], T_stat_list[[4]],
+#             T_stat_list[[5]], T_stat_list[[6]]),
+#   p  = list(p_val_list[[1]], p_val_list[[1]],
+#             p_val_list[[3]], p_val_list[[4]],
+#             p_val_list[[5]], p_val_list[[6]]),
+#   title = "",
+#   dep.var.labels = "Price Change",
+#   column.labels = c("FOMC", 
+#                     "Control",
+#                     "FOMC (P.1)",
+#                     "Control (P.1)",
+#                     "FOMC (P.2)",
+#                     "Control (P.2)"),
+#   # covariate.labels = reg_labels,
+#   header = FALSE,
+#   notes.append = FALSE, # <-- ADDED: Prevents default "Standard errors..." note
+#   align = TRUE,
+#   digits = 8,
+#   omit.stat = c("f", "adj.rsq", "ll"),
+#   notes = paste0("Standard errors are Newey-West robust (lag=", lag_NW, ").")
+# )
 
 #==== 04e - Bid-ask spread & reaction of the MM ===============================#
 
